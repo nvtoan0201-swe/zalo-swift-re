@@ -1,0 +1,42 @@
+//! olaz-ui: the GPUI interface of Olaz for Linux.
+
+pub mod app;
+pub mod assets;
+pub mod cards;
+pub mod chat;
+pub mod chrome;
+pub mod cloud;
+pub mod contacts;
+pub mod conversation_actions;
+pub mod decode;
+pub mod dev_input;
+pub mod exec;
+pub mod format;
+pub mod group_create;
+pub mod icon;
+pub mod inspector;
+pub mod keymap;
+pub mod layout_dump;
+pub mod labels;
+pub mod mentions;
+pub mod message_actions;
+pub mod player;
+pub mod polls;
+pub mod reactions;
+pub mod reminders;
+pub mod render_scene;
+pub mod richtext;
+pub mod settings;
+pub mod settings_window;
+pub mod setup;
+pub mod shell;
+pub mod stickers;
+pub mod switcher;
+pub mod theme;
+pub mod tour;
+pub mod transfer;
+pub mod viewer;
+pub mod wallpaper;
+pub mod widgets;
+
+pub use app::{UiConfig, run};

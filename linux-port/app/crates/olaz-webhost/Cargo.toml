@@ -1,0 +1,18 @@
+[package]
+name = "olaz-webhost"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+olaz-core.workspace = true
+olaz-ipc.workspace = true
+serde_json.workspace = true
+gtk = "0.18"
+glib = "0.18"
+gio = "0.18"
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+webkit2gtk-sys = "2.0.2"
+javascriptcore = { package = "javascriptcore-rs", version = "1", features = ["v2_28"] }
+javascriptcore-rs-sys = "1"
+soup = { package = "soup3", version = "0.5" }

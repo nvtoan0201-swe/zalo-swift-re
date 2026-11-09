@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+exclude = ["vendor"]
+members = [
+    "crates/olaz-core",
+    "crates/olaz-ipc",
+    "crates/olaz-webhost",
+    "crates/olaz-host",
+    "crates/olaz-main",
+    "crates/olaz-runtime",
+    "crates/olaz-engine",
+    "crates/olaz-media",
+    "crates/olaz-ui",
+    "crates/olaz",
+
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+olaz-core = { path = "crates/olaz-core" }
+olaz-ipc = { path = "crates/olaz-ipc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+anyhow = "1"
+thiserror = "2"
+log = "0.4"
+memmap2 = "0.9"
+percent-encoding = "2"
+mime_guess = "2"
+
+[patch.crates-io]
+zed-xim = { path = "vendor/zed-xim" }
+# Rounded window frame on all corners (window_border.rs), see vendor/gpui-component/src/window_border.rs.
+gpui-component = { path = "vendor/gpui-component" }
+
+# Release builds: thin LTO, one codegen unit, stripped.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

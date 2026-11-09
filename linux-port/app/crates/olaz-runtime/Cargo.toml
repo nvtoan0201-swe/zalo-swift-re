@@ -1,0 +1,18 @@
+[package]
+name = "olaz-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+olaz-core.workspace = true
+olaz-host = { path = "../olaz-host" }
+sha2 = "0.10"
+plist = "1"
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
+
+[dev-dependencies]
+tempfile = "3"

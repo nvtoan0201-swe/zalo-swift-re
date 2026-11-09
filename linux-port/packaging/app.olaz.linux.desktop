@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Olaz
+Comment=Zalo cho máy tính
+Exec=olaz
+Icon=app.olaz.linux
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=Zalo;chat;messenger;
+StartupNotify=true
+StartupWMClass=app.olaz.linux

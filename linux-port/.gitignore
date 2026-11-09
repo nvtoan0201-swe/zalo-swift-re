@@ -1,0 +1,23 @@
+dist/
+build-flatpak/
+.flatpak-builder/
+renders/
+
+# Local only (not published): design docs, macOS comparison tooling and doc generators.
+docs/
+ci/
+reference/
+ui-reference/
+shared/spec/
+tools/snapshot-harness/
+tools/visual-diff/
+tools/layout-diff.py
+tools/freeze-probes.py
+tools/fit-glass.py
+tools/fit-animation.py
+tools/icon-metrics.py
+tools/gen-ui-inventory.py
+tools/gen-swift-map.py
+tools/gen-bridge-registry.py
+tools/gen-icon-map.py
+tools/__pycache__/

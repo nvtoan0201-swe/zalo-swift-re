@@ -1,0 +1,56 @@
+# Flatpak manifest. Build from linux-port/:
+#   packaging/flatpak/gen-cargo-sources.sh            # once per Cargo.lock change → packaging/flatpak/cargo-sources.json
+#   flatpak-builder --user --install --force-clean build-flatpak packaging/flatpak/app.olaz.linux.yml
+# The renderer uses WebKitGTK 4.1 from the GNOME runtime.
+# Video codecs (H.264/AAC used by Zalo) come from org.freedesktop.Platform.codecs-extra, which Flatpak installs with the runtime.
+id: app.olaz.linux
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: olaz
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --share=network
+  - --device=dri
+  - --socket=pulseaudio
+  - --filesystem=xdg-download
+  # Network state for navigator.connection (system bus, read-only properties).
+  - --system-talk-name=org.freedesktop.NetworkManager
+  # Dock badge (Unity LauncherEntry) is a broadcast signal; notifications go through the portal or this name.
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=com.canonical.Unity
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/olaz/cargo
+modules:
+  # 7-Zip (`7zz`) for the official runtime installer.
+  - name: 7zz
+    buildsystem: simple
+    build-commands:
+      # Upstream builds with -Werror; newer GCC versions add warnings, so keep them as warnings.
+      - make -C CPP/7zip/Bundles/Alone2 -f makefile.gcc -j"$FLATPAK_BUILDER_N_JOBS" CFLAGS_WARN_WALL="-Wall -Wextra"
+      - install -Dm755 CPP/7zip/Bundles/Alone2/_o/7zz /app/bin/7zz
+    sources:
+      - type: archive
+        url: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-src.tar.xz
+        sha256: a4e374c8f864f51df48c2cfd0e1413ec3b2ea030deae852d6a655402ebb61ac4
+        strip-components: 0
+
+  - name: olaz
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --manifest-path app/Cargo.toml --release --locked -p olaz -p olaz-webhost
+      - packaging/install.sh /app app/target/release
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - app/target
+          - build-flatpak
+          - .flatpak-builder
+      - cargo-sources.json

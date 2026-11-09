@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.olaz.linux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="app.olaz">
+    <name>Olaz</name>
+  </developer>
+  <name>Olaz</name>
+  <summary>Zalo cho máy tính</summary>
+  <description>
+    <p>Native Zalo client for Linux. The official Zalo PC renderer is downloaded from VNG at first start and runs
+    hidden; Olaz draws its own native interface on top of it.</p>
+  </description>
+  <url type="homepage">https://github.com/qnguyen3/zalo-swift-re</url>
+  <launchable type="desktop-id">app.olaz.linux.desktop</launchable>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">moderate</content_attribute>
+  </content_rating>
+  <requires>
+    <internet>always</internet>
+  </requires>
+  <releases>
+    <release version="0.1.0" date="2026-11-09"/>
+  </releases>
+</component>

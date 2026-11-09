@@ -1,0 +1,752 @@
+{
+ "_generated": "by tools/gen-icon-map.py — edit the MAP there, not this file",
+ "set": "Phosphor Icons (MIT), core package assets",
+ "symbols": {
+  "1.magnifyingglass": {
+   "icon": "magnifying-glass",
+   "weight": "regular",
+   "text": "1:1"
+  },
+  "alarm": {
+   "icon": "alarm",
+   "weight": "regular"
+  },
+  "alarm.fill": {
+   "icon": "alarm",
+   "weight": "fill"
+  },
+  "archivebox": {
+   "icon": "archive",
+   "weight": "regular"
+  },
+  "arrow.clockwise": {
+   "icon": "arrow-clockwise",
+   "weight": "regular"
+  },
+  "arrow.counterclockwise": {
+   "icon": "arrow-counter-clockwise",
+   "weight": "regular"
+  },
+  "arrow.down.circle": {
+   "icon": "arrow-circle-down",
+   "weight": "regular"
+  },
+  "arrow.down.right.and.arrow.up.left": {
+   "icon": "arrows-in",
+   "weight": "regular"
+  },
+  "arrow.right": {
+   "icon": "arrow-right",
+   "weight": "regular"
+  },
+  "arrow.right.circle": {
+   "icon": "arrow-circle-right",
+   "weight": "regular"
+  },
+  "arrow.triangle.2.circlepath": {
+   "icon": "arrows-clockwise",
+   "weight": "regular"
+  },
+  "arrow.up": {
+   "icon": "arrow-up",
+   "weight": "bold"
+  },
+  "arrow.up.arrow.down": {
+   "icon": "arrows-down-up",
+   "weight": "regular"
+  },
+  "arrow.up.left.and.arrow.down.right": {
+   "icon": "arrows-out",
+   "weight": "regular"
+  },
+  "arrow.up.left.and.down.right.magnifyingglass": {
+   "icon": "frame-corners",
+   "weight": "regular"
+  },
+  "arrow.uturn.backward": {
+   "icon": "arrow-u-up-left",
+   "weight": "regular"
+  },
+  "arrowshape.turn.up.left": {
+   "icon": "arrow-bend-up-left",
+   "weight": "regular"
+  },
+  "arrowshape.turn.up.right": {
+   "icon": "arrow-bend-up-right",
+   "weight": "regular"
+  },
+  "at": {
+   "icon": "at",
+   "weight": "regular"
+  },
+  "bell": {
+   "icon": "bell",
+   "weight": "regular"
+  },
+  "bell.badge": {
+   "icon": "bell",
+   "weight": "regular",
+   "dot": true
+  },
+  "bell.slash": {
+   "icon": "bell-slash",
+   "weight": "regular"
+  },
+  "bell.slash.fill": {
+   "icon": "bell-slash",
+   "weight": "fill"
+  },
+  "bubble.left": {
+   "icon": "chat-circle",
+   "weight": "regular"
+  },
+  "bubble.left.and.bubble.right": {
+   "icon": "chats-circle",
+   "weight": "regular"
+  },
+  "bubble.left.and.bubble.right.fill": {
+   "icon": "chats-circle",
+   "weight": "fill"
+  },
+  "bubble.left.and.text.bubble.right": {
+   "icon": "chat-circle-text",
+   "weight": "regular"
+  },
+  "bubble.left.fill": {
+   "icon": "chat-circle",
+   "weight": "fill"
+  },
+  "camera.fill": {
+   "icon": "camera",
+   "weight": "fill"
+  },
+  "camera.viewfinder": {
+   "icon": "scan",
+   "weight": "regular"
+  },
+  "chart.bar.doc.horizontal": {
+   "icon": "chart-bar-horizontal",
+   "weight": "regular"
+  },
+  "chart.bar.fill": {
+   "icon": "chart-bar-horizontal",
+   "weight": "fill"
+  },
+  "checklist": {
+   "icon": "list-checks",
+   "weight": "regular"
+  },
+  "checkmark": {
+   "icon": "check",
+   "weight": "bold"
+  },
+  "checkmark.circle": {
+   "icon": "check-circle",
+   "weight": "regular"
+  },
+  "checkmark.circle.fill": {
+   "icon": "check-circle",
+   "weight": "fill"
+  },
+  "checkmark.message": {
+   "icon": "chat-circle",
+   "weight": "regular",
+   "badge": {
+    "icon": "check-circle",
+    "weight": "fill"
+   }
+  },
+  "checkmark.square.fill": {
+   "icon": "check-square",
+   "weight": "fill"
+  },
+  "chevron.down": {
+   "icon": "caret-down",
+   "weight": "regular"
+  },
+  "chevron.left": {
+   "icon": "caret-left",
+   "weight": "regular"
+  },
+  "chevron.right": {
+   "icon": "caret-right",
+   "weight": "regular"
+  },
+  "chevron.up.chevron.down": {
+   "icon": "caret-up-down",
+   "weight": "regular"
+  },
+  "circle": {
+   "icon": "circle",
+   "weight": "regular"
+  },
+  "circle.fill": {
+   "icon": "circle",
+   "weight": "fill"
+  },
+  "clock": {
+   "icon": "clock",
+   "weight": "regular"
+  },
+  "clock.badge.exclamationmark": {
+   "icon": "clock",
+   "weight": "regular",
+   "badge": {
+    "icon": "warning-circle",
+    "weight": "fill"
+   }
+  },
+  "clock.badge.xmark": {
+   "icon": "clock",
+   "weight": "regular",
+   "badge": {
+    "icon": "x-circle",
+    "weight": "fill"
+   }
+  },
+  "cloud": {
+   "icon": "cloud",
+   "weight": "regular"
+  },
+  "cloud.fill": {
+   "icon": "cloud",
+   "weight": "fill"
+  },
+  "doc.fill": {
+   "icon": "file",
+   "weight": "fill"
+  },
+  "doc.on.doc": {
+   "icon": "copy",
+   "weight": "regular"
+  },
+  "doc.plaintext.fill": {
+   "icon": "file-text",
+   "weight": "fill"
+  },
+  "doc.richtext.fill": {
+   "icon": "file-pdf",
+   "weight": "fill"
+  },
+  "doc.text.fill": {
+   "icon": "file-doc",
+   "weight": "fill"
+  },
+  "doc.zipper": {
+   "icon": "file-zip",
+   "weight": "regular"
+  },
+  "ellipsis": {
+   "icon": "dots-three",
+   "weight": "bold"
+  },
+  "ellipsis.bubble": {
+   "icon": "chat-circle-dots",
+   "weight": "regular"
+  },
+  "ellipsis.circle": {
+   "icon": "dots-three-circle",
+   "weight": "regular"
+  },
+  "envelope.badge.fill": {
+   "icon": "envelope-simple",
+   "weight": "fill",
+   "dot": true
+  },
+  "envelope.open.fill": {
+   "icon": "envelope-simple-open",
+   "weight": "fill"
+  },
+  "exclamationmark.arrow.triangle.2.circlepath": {
+   "icon": "arrows-clockwise",
+   "weight": "regular",
+   "badge": {
+    "icon": "warning",
+    "weight": "fill"
+   }
+  },
+  "exclamationmark.icloud": {
+   "icon": "cloud-warning",
+   "weight": "regular"
+  },
+  "exclamationmark.triangle": {
+   "icon": "warning",
+   "weight": "regular"
+  },
+  "exclamationmark.triangle.fill": {
+   "icon": "warning",
+   "weight": "fill"
+  },
+  "externaldrive": {
+   "icon": "hard-drive",
+   "weight": "regular"
+  },
+  "externaldrive.fill": {
+   "icon": "hard-drive",
+   "weight": "fill"
+  },
+  "eye": {
+   "icon": "eye",
+   "weight": "regular"
+  },
+  "eye.slash": {
+   "icon": "eye-slash",
+   "weight": "regular"
+  },
+  "face.dashed": {
+   "icon": "smiley-blank",
+   "weight": "regular"
+  },
+  "face.smiling": {
+   "icon": "smiley",
+   "weight": "regular"
+  },
+  "film.fill": {
+   "icon": "film-strip",
+   "weight": "fill"
+  },
+  "folder.fill": {
+   "icon": "folder",
+   "weight": "fill"
+  },
+  "gearshape": {
+   "icon": "gear",
+   "weight": "regular"
+  },
+  "gearshape.fill": {
+   "icon": "gear",
+   "weight": "fill"
+  },
+  "info.circle": {
+   "icon": "info",
+   "weight": "regular"
+  },
+  "info.circle.fill": {
+   "icon": "info",
+   "weight": "fill"
+  },
+  "iphone": {
+   "icon": "device-mobile",
+   "weight": "regular"
+  },
+  "iphone.and.arrow.forward": {
+   "icon": "device-mobile",
+   "weight": "regular",
+   "badge": {
+    "icon": "arrow-circle-right",
+    "weight": "fill"
+   }
+  },
+  "key": {
+   "icon": "key",
+   "weight": "regular"
+  },
+  "key.fill": {
+   "icon": "key",
+   "weight": "fill"
+  },
+  "largecircle.fill.circle": {
+   "icon": "radio-button",
+   "weight": "fill"
+  },
+  "link": {
+   "icon": "link",
+   "weight": "regular"
+  },
+  "list.bullet": {
+   "icon": "list-bullets",
+   "weight": "regular"
+  },
+  "lock": {
+   "icon": "lock",
+   "weight": "regular"
+  },
+  "lock.fill": {
+   "icon": "lock",
+   "weight": "fill"
+  },
+  "lock.open": {
+   "icon": "lock-open",
+   "weight": "regular"
+  },
+  "lock.shield": {
+   "icon": "shield-check",
+   "weight": "regular"
+  },
+  "lock.shield.fill": {
+   "icon": "shield-check",
+   "weight": "fill"
+  },
+  "lock.trianglebadge.exclamationmark": {
+   "icon": "lock",
+   "weight": "regular",
+   "badge": {
+    "icon": "warning",
+    "weight": "fill"
+   }
+  },
+  "magnifyingglass": {
+   "icon": "magnifying-glass",
+   "weight": "regular"
+  },
+  "map": {
+   "icon": "map-trifold",
+   "weight": "regular"
+  },
+  "mappin": {
+   "icon": "map-pin",
+   "weight": "regular"
+  },
+  "mappin.circle.fill": {
+   "icon": "map-pin",
+   "weight": "fill"
+  },
+  "message.badge": {
+   "icon": "chat-circle",
+   "weight": "regular",
+   "dot": true
+  },
+  "minus": {
+   "icon": "minus",
+   "weight": "regular"
+  },
+  "minus.circle": {
+   "icon": "minus-circle",
+   "weight": "regular"
+  },
+  "minus.magnifyingglass": {
+   "icon": "magnifying-glass-minus",
+   "weight": "regular"
+  },
+  "music.note": {
+   "icon": "music-note",
+   "weight": "regular"
+  },
+  "nosign": {
+   "icon": "prohibit",
+   "weight": "regular"
+  },
+  "paintpalette": {
+   "icon": "palette",
+   "weight": "regular"
+  },
+  "paperclip": {
+   "icon": "paperclip",
+   "weight": "regular"
+  },
+  "pause.fill": {
+   "icon": "pause",
+   "weight": "fill"
+  },
+  "pencil": {
+   "icon": "pencil-simple",
+   "weight": "regular"
+  },
+  "person": {
+   "icon": "user",
+   "weight": "regular"
+  },
+  "person.2": {
+   "icon": "users",
+   "weight": "regular"
+  },
+  "person.2.badge.plus": {
+   "icon": "users",
+   "weight": "regular",
+   "badge": {
+    "icon": "plus-circle",
+    "weight": "fill"
+   }
+  },
+  "person.2.fill": {
+   "icon": "users",
+   "weight": "fill"
+  },
+  "person.2.slash": {
+   "icon": "users",
+   "weight": "regular",
+   "slash": true
+  },
+  "person.badge.plus": {
+   "icon": "user-plus",
+   "weight": "regular"
+  },
+  "person.crop.circle": {
+   "icon": "user-circle",
+   "weight": "regular"
+  },
+  "person.crop.circle.badge.checkmark": {
+   "icon": "user-circle-check",
+   "weight": "regular"
+  },
+  "person.crop.circle.badge.plus": {
+   "icon": "user-circle-plus",
+   "weight": "regular"
+  },
+  "person.crop.circle.badge.questionmark": {
+   "icon": "user-circle",
+   "weight": "regular",
+   "badge": {
+    "icon": "question",
+    "weight": "fill"
+   }
+  },
+  "person.crop.circle.badge.questionmark.fill": {
+   "icon": "user-circle",
+   "weight": "fill",
+   "badge": {
+    "icon": "question",
+    "weight": "fill"
+   }
+  },
+  "person.crop.circle.fill": {
+   "icon": "user-circle",
+   "weight": "fill"
+  },
+  "person.crop.rectangle": {
+   "icon": "identification-card",
+   "weight": "regular"
+  },
+  "person.fill": {
+   "icon": "user",
+   "weight": "fill"
+  },
+  "person.fill.questionmark": {
+   "icon": "user",
+   "weight": "fill",
+   "badge": {
+    "icon": "question",
+    "weight": "fill"
+   }
+  },
+  "phone": {
+   "icon": "phone",
+   "weight": "regular"
+  },
+  "phone.arrow.down.left.fill": {
+   "icon": "phone-incoming",
+   "weight": "fill"
+  },
+  "phone.fill": {
+   "icon": "phone",
+   "weight": "fill"
+  },
+  "photo": {
+   "icon": "image",
+   "weight": "regular"
+  },
+  "photo.badge.exclamationmark": {
+   "icon": "image-broken",
+   "weight": "regular"
+  },
+  "photo.fill": {
+   "icon": "image",
+   "weight": "fill"
+  },
+  "photo.on.rectangle": {
+   "icon": "images",
+   "weight": "regular"
+  },
+  "photo.on.rectangle.angled": {
+   "icon": "images",
+   "weight": "regular"
+  },
+  "pin": {
+   "icon": "push-pin",
+   "weight": "regular"
+  },
+  "pin.fill": {
+   "icon": "push-pin",
+   "weight": "fill"
+  },
+  "pin.slash": {
+   "icon": "push-pin-slash",
+   "weight": "regular"
+  },
+  "pin.slash.fill": {
+   "icon": "push-pin-slash",
+   "weight": "fill"
+  },
+  "play.circle.fill": {
+   "icon": "play-circle",
+   "weight": "fill"
+  },
+  "play.fill": {
+   "icon": "play",
+   "weight": "fill"
+  },
+  "play.rectangle.fill": {
+   "icon": "monitor-play",
+   "weight": "fill"
+  },
+  "play.rectangle.on.rectangle.fill": {
+   "icon": "file-ppt",
+   "weight": "fill"
+  },
+  "play.slash": {
+   "icon": "play",
+   "weight": "regular",
+   "slash": true
+  },
+  "plus": {
+   "icon": "plus",
+   "weight": "bold"
+  },
+  "plus.bubble": {
+   "icon": "chat-circle",
+   "weight": "regular",
+   "badge": {
+    "icon": "plus-circle",
+    "weight": "fill"
+   }
+  },
+  "plus.circle": {
+   "icon": "plus-circle",
+   "weight": "regular"
+  },
+  "plus.magnifyingglass": {
+   "icon": "magnifying-glass-plus",
+   "weight": "regular"
+  },
+  "questionmark.circle": {
+   "icon": "question",
+   "weight": "regular"
+  },
+  "questionmark.square.fill": {
+   "icon": "square",
+   "weight": "fill",
+   "glyph": "question"
+  },
+  "rectangle.portrait.and.arrow.right": {
+   "icon": "sign-out",
+   "weight": "regular"
+  },
+  "repeat": {
+   "icon": "repeat",
+   "weight": "regular"
+  },
+  "shield.lefthalf.filled": {
+   "icon": "shield",
+   "weight": "regular"
+  },
+  "sidebar.right": {
+   "icon": "sidebar-simple",
+   "weight": "regular",
+   "mirror": true
+  },
+  "slider.horizontal.3": {
+   "icon": "sliders-horizontal",
+   "weight": "regular"
+  },
+  "speaker.slash.fill": {
+   "icon": "speaker-slash",
+   "weight": "fill"
+  },
+  "speaker.wave.1.fill": {
+   "icon": "speaker-low",
+   "weight": "fill"
+  },
+  "speaker.wave.2.fill": {
+   "icon": "speaker-high",
+   "weight": "fill"
+  },
+  "square": {
+   "icon": "square",
+   "weight": "regular"
+  },
+  "square.and.arrow.down": {
+   "icon": "download-simple",
+   "weight": "regular"
+  },
+  "square.grid.2x2": {
+   "icon": "squares-four",
+   "weight": "regular"
+  },
+  "star": {
+   "icon": "star",
+   "weight": "regular"
+  },
+  "star.fill": {
+   "icon": "star",
+   "weight": "fill"
+  },
+  "star.slash": {
+   "icon": "star",
+   "weight": "regular",
+   "slash": true
+  },
+  "tablecells.fill": {
+   "icon": "file-xls",
+   "weight": "fill"
+  },
+  "tag": {
+   "icon": "tag",
+   "weight": "regular"
+  },
+  "tag.fill": {
+   "icon": "tag",
+   "weight": "fill"
+  },
+  "tag.slash": {
+   "icon": "tag",
+   "weight": "regular",
+   "slash": true
+  },
+  "text.quote": {
+   "icon": "quotes",
+   "weight": "regular"
+  },
+  "timer": {
+   "icon": "timer",
+   "weight": "regular"
+  },
+  "trash": {
+   "icon": "trash",
+   "weight": "regular"
+  },
+  "tray": {
+   "icon": "tray",
+   "weight": "regular"
+  },
+  "tray.2": {
+   "icon": "stack",
+   "weight": "regular"
+  },
+  "tray.and.arrow.down": {
+   "icon": "tray-arrow-down",
+   "weight": "regular"
+  },
+  "tray.and.arrow.up": {
+   "icon": "tray-arrow-up",
+   "weight": "regular"
+  },
+  "video": {
+   "icon": "video-camera",
+   "weight": "regular"
+  },
+  "video.fill": {
+   "icon": "video-camera",
+   "weight": "fill"
+  },
+  "video.slash.fill": {
+   "icon": "video-camera-slash",
+   "weight": "fill"
+  },
+  "waveform": {
+   "icon": "waveform",
+   "weight": "regular"
+  },
+  "wifi": {
+   "icon": "wifi-high",
+   "weight": "regular"
+  },
+  "xmark": {
+   "icon": "x",
+   "weight": "bold"
+  },
+  "xmark.circle.fill": {
+   "icon": "x-circle",
+   "weight": "fill"
+  }
+ }
+}
