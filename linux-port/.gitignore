@@ -9,15 +9,11 @@ ci/
 reference/
 ui-reference/
 shared/spec/
-tools/snapshot-harness/
-tools/visual-diff/
-tools/layout-diff.py
-tools/freeze-probes.py
-tools/fit-glass.py
-tools/fit-animation.py
-tools/icon-metrics.py
-tools/gen-ui-inventory.py
-tools/gen-swift-map.py
-tools/gen-bridge-registry.py
-tools/gen-icon-map.py
-tools/__pycache__/
+
+# Development data and tooling (kept locally only): UI fixture scenes, scripts (reference/tools), macOS sync state.
+fixtures/
+.last-sync
+shared/js-modules/
+shared/ui-assets/olaz.icns
+fingerprint-helper/build/
+fingerprint-helper/vendor/

@@ -213,7 +213,7 @@ mod tests {
     fn catalog_entries_resolve() {
         for id in CATALOG {
             let s = spec(id).unwrap_or_else(|| panic!("{id}"));
-            if let Some(f) = s.fixture {
+            if let Some(f) = s.fixture.filter(|_| olaz_engine::fixtures::default_dir().is_dir()) {
                 assert!(olaz_engine::fixtures::load(&olaz_engine::fixtures::default_dir(), f, 0).is_ok(), "{id}");
             }
         }
