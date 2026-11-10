@@ -202,7 +202,7 @@ impl Render for PlayerView {
                 .child(div().absolute().inset_0().pt(px(36.0)).when(self.audio_only && error.is_none(), |el| el.pb(px(70.0))).child(content))
                 .children(controls)
                 .child(div().absolute().top(px(10.0)).left(px(16.0)).text_size(px(12.5)).font_weight(FontWeight::MEDIUM).text_color(gpui::white().opacity(0.8)).child(self.title.clone()))
-                .child(crate::chrome::titlebar_overlay(36.0, window, cx)),
+                .child(crate::chrome::titlebar_overlay_on_dark(36.0, window, cx)),
             window,
             cx,
         )

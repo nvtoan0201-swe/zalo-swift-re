@@ -17,7 +17,11 @@ pub const CONTROLS_INSET: f32 = 14.0;
 /// GNOME-style window buttons (minimize, maximize/restore, close) at the trailing edge — Linux replaces the
 /// GNOME-style window buttons (minimize, maximize, close) on the right.
 pub fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
-    let theme = Theme::get(cx).clone();
+    window_controls_with(Theme::get(cx).clone(), window)
+}
+
+/// The buttons drawn with a given theme (media windows force the dark one: they sit on black).
+fn window_controls_with(theme: Theme, window: &Window) -> impl IntoElement {
     let button = |id: &'static str, path: &'static str| {
         div()
             .id(id)
@@ -46,6 +50,35 @@ pub fn window_controls(window: &Window, cx: &App) -> impl IntoElement {
             window.remove_window();
             cx.quit();
         }))
+}
+
+/// [`titlebar_overlay`] for windows whose content is black (photo viewer, player): buttons in the dark-theme colors
+/// whatever the app's appearance, so they stay visible.
+pub fn titlebar_overlay_on_dark(height: f32, window: &Window, cx: &App) -> impl IntoElement {
+    let mut theme = Theme::get(cx).clone();
+    theme.dark = true;
+    titlebar_bar(height).child(window_controls_with(theme, window))
+}
+
+fn titlebar_bar(height: f32) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id("titlebar")
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .h(px(height))
+        .flex()
+        .items_center()
+        .justify_end()
+        .pr(px(CONTROLS_INSET))
+        .on_mouse_down(MouseButton::Left, |ev, window, _| {
+            if ev.click_count >= 2 {
+                window.zoom_window();
+            } else {
+                window.start_window_move();
+            }
+        })
 }
 
 /// A transparent bar of `height` over full-bleed content: drags the window, double click zooms, lights at leading.
@@ -104,6 +137,10 @@ pub fn frame(content: impl IntoElement, window: &Window, cx: &App) -> impl IntoE
 
 /// The window root: gpui-component's `Root` with a transparent surface, so only the rounded frame paints the corners
 /// (its default theme background is a square that would show outside them).
+/// Emoji come from the bundled Noto Color Emoji first: otherwise the system fallback may pick a font with monochrome
+/// emoji glyphs (DejaVu Sans covers part of the emoticon block).
 pub fn root(view: impl Into<gpui::AnyView>, window: &mut Window, cx: &mut gpui::Context<gpui_component::Root>) -> gpui_component::Root {
-    gpui_component::Root::new(view, window, cx).bg(gpui::transparent_black())
+    let mut root = gpui_component::Root::new(view, window, cx).bg(gpui::transparent_black());
+    root.text_style().font_fallbacks = Some(gpui::FontFallbacks::from_fonts(vec![crate::theme::EMOJI_FONT.to_string()]));
+    root
 }

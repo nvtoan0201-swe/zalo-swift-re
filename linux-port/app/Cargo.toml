@@ -37,6 +37,8 @@ mime_guess = "2"
 zed-xim = { path = "vendor/zed-xim" }
 # Rounded window frame on all corners (window_border.rs), see vendor/gpui-component/src/window_border.rs.
 gpui-component = { path = "vendor/gpui-component" }
+# Emoji-only fonts (Noto Color Emoji) usable in a font fallback chain (cosmic_text_system.rs).
+gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
 
 # Release builds: thin LTO, one codegen unit, stripped.
 [profile.release]

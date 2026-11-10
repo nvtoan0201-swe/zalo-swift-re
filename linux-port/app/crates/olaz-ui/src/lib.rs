@@ -10,6 +10,7 @@ pub mod contacts;
 pub mod conversation_actions;
 pub mod decode;
 pub mod dev_input;
+pub mod emoji_picker;
 pub mod exec;
 pub mod format;
 pub mod group_create;

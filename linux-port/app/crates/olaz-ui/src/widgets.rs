@@ -36,6 +36,30 @@ impl Images {
     pub fn new(loader: Arc<MediaLoader>) -> Self {
         Self { loader, states: HashMap::new(), resolved: HashMap::new() }
     }
+
+    /// The official resolution for "conv|msg|kind": `None` = never asked, `Some(None)` = in flight.
+    pub fn resolved_for(&self, key: &str) -> Option<Option<olaz_engine::media::MediaResolution>> {
+        self.resolved.get(key).cloned()
+    }
+}
+
+/// Asks the official client once for the media of a message (local copy / expired); windows refresh when it answers.
+pub fn resolve_media_once(conv: &str, msg: &str, kind: olaz_engine::media::MediaKind, cx: &mut App) {
+    let key = format!("{conv}|{msg}|{}", kind.raw());
+    if cx.global::<Images>().resolved.contains_key(&key) {
+        return;
+    }
+    cx.global_mut::<Images>().resolved.insert(key.clone(), None);
+    let engine = crate::app::engine(cx);
+    let (conv, msg) = (conv.to_string(), msg.to_string());
+    cx.spawn(async move |cx| {
+        let r = engine.resolve_media(&conv, &msg, kind, false).await;
+        let _ = cx.update(|cx| {
+            cx.global_mut::<Images>().resolved.insert(key, Some(r));
+            cx.refresh_windows();
+        });
+    })
+    .detach();
 }
 
 pub fn detect_format(b: &[u8]) -> Option<ImageFormat> {

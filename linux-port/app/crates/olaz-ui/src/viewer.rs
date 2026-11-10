@@ -1,5 +1,5 @@
-//! Media viewer and media playback: photos open in a viewer window; videos, voice and files are fetched
-//! through MediaLoader and handed to the desktop (portal OpenURI / xdg-open) until the GStreamer player lands.
+//! Media viewer and media playback: photos open in a viewer window, videos and voice in the built-in player; files
+//! are fetched through MediaLoader and opened with the desktop's default app or saved where the user chooses.
 
 use std::sync::Arc;
 
@@ -12,30 +12,67 @@ use crate::widgets::{ImageState, Images, remote_image, spinner};
 
 pub struct PhotoViewer {
     url: String,
+    /// The message the photo belongs to (conversation, message id): when the direct URL cannot be loaded, the
+    /// official client resolves a local copy, as the chat bubble does.
+    origin: Option<(String, String)>,
+}
+
+enum Shown {
+    Image(gpui::ImageSource),
+    Loading,
+    Failed(&'static str),
+}
+
+impl PhotoViewer {
+    fn shown(&mut self, cx: &mut Context<Self>) -> Shown {
+        use olaz_engine::media::{MediaKind, MediaResolution};
+        match remote_image(&self.url, cx) {
+            ImageState::Ready(image) => return Shown::Image(image),
+            ImageState::Loading => return Shown::Loading,
+            ImageState::Failed => {}
+        }
+        let Some((conv, msg)) = self.origin.clone() else { return Shown::Failed("Không tải được ảnh") };
+        let key = format!("{conv}|{msg}|{}", MediaKind::Photo.raw());
+        match cx.global::<Images>().resolved_for(&key) {
+            Some(Some(MediaResolution::File(path))) => match remote_image(&format!("file://{path}"), cx) {
+                ImageState::Ready(image) => Shown::Image(image),
+                ImageState::Loading => Shown::Loading,
+                ImageState::Failed => Shown::Failed("Không tải được ảnh"),
+            },
+            Some(Some(MediaResolution::Expired)) => Shown::Failed("Ảnh đã hết hạn"),
+            Some(Some(_)) => Shown::Failed("Không tải được ảnh"),
+            Some(None) => Shown::Loading,
+            None => {
+                crate::widgets::resolve_media_once(&conv, &msg, MediaKind::Photo, cx);
+                Shown::Loading
+            }
+        }
+    }
 }
 
 impl Render for PhotoViewer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = remote_image(&self.url, cx);
-        let content = match state {
-            ImageState::Ready(image) => img(image).size_full().object_fit(ObjectFit::Contain).into_any_element(),
-            ImageState::Loading => div().size_full().flex().items_center().justify_center().child(spinner(22.0, gpui::white())).into_any_element(),
-            ImageState::Failed => div().size_full().flex().items_center().justify_center().text_color(gpui::white()).child("Không tải được ảnh").into_any_element(),
+        let content = match self.shown(cx) {
+            Shown::Image(image) => img(image).size_full().object_fit(ObjectFit::Contain).into_any_element(),
+            Shown::Loading => div().size_full().flex().items_center().justify_center().child(spinner(22.0, gpui::white())).into_any_element(),
+            Shown::Failed(text) => div().size_full().flex().items_center().justify_center().text_color(gpui::white()).child(text).into_any_element(),
         };
         crate::chrome::frame(
             div()
                 .size_full()
                 .relative()
                 .bg(gpui::black())
+                .rounded(crate::chrome::inner_radius(window))
                 .child(div().absolute().inset_0().pt(px(36.0)).child(content))
-                .child(crate::chrome::titlebar_overlay(36.0, window, cx)),
+                .child(crate::chrome::titlebar_overlay_on_dark(36.0, window, cx)),
             window,
             cx,
         )
     }
 }
 
-pub fn open_photo(url: &str, _window: &mut Window, cx: &mut App) {
+/// Opens a photo; `origin` = (conversation, message) when it comes from a message.
+pub fn open_photo_of(url: &str, origin: Option<(String, String)>, cx: &mut App) {
     let bounds = Bounds::centered(None, size(px(900.0), px(700.0)), cx);
     let url = url.to_string();
     let _ = cx.open_window(
@@ -48,10 +85,15 @@ pub fn open_photo(url: &str, _window: &mut Window, cx: &mut App) {
             ..Default::default()
         },
         |window, cx| {
-            let view = cx.new(|_| PhotoViewer { url });
+            let view = cx.new(|_| PhotoViewer { url, origin });
             cx.new(|cx| crate::chrome::root(view, window, cx))
         },
     );
+}
+
+/// Opens a photo that is not tied to a message (zCloud files, local files).
+pub fn open_photo(url: &str, _window: &mut Window, cx: &mut App) {
+    open_photo_of(url, None, cx);
 }
 
 fn fetch_then_open(url: &str, name: Option<String>, cx: &mut App) {
@@ -260,6 +302,45 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"%PDF-1.4 test");
         let toast = engine.state.borrow().conversation_ui.toast.clone().map(|t| t.text);
         assert_eq!(toast.as_deref(), Some("Đã lưu Báo cáo.pdf"));
+    }
+
+    /// A photo whose direct URL fails is shown from the copy the official client resolves (as in the chat bubble).
+    #[test]
+    fn photo_viewer_falls_back_to_the_resolved_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("local.png");
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 30, 30, 255])))
+            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .unwrap();
+        std::fs::write(&png, bytes).unwrap();
+        let mut app = gpui::TestApp::new();
+        let engine = crate::switcher::tests::test_engine(&dir.path().join("home"));
+        let answers = serde_json::json!({"__zaloChat.resolveMedia": {"state": "ok", "path": png.to_string_lossy()}});
+        *engine.fake_renderer.borrow_mut() = Some(std::rc::Rc::new(olaz_engine::fixtures::FakeRenderer::new(answers.as_object().unwrap())));
+        app.update(|cx| {
+            let loader = olaz_media::MediaLoader::new(&dir.path().join("cache"), vec![dir.path().to_path_buf()], "test");
+            cx.set_global(crate::widgets::Images::new(loader));
+            cx.set_global(crate::app::EngineGlobal(engine.clone()));
+            cx.set_global(crate::theme::Theme { dark: false, accent: crate::theme::hex(0x0068FF), text_scale: 1.0 });
+        });
+        let missing = format!("file://{}/gone.jpg", dir.path().display());
+        let mut window = app.open_window(move |_, _| super::PhotoViewer { url: missing, origin: Some(("c1".into(), "m1".into())) });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let shown = loop {
+            window.draw();
+            app.run_until_parked();
+            let s = window.update(|v, _, cx| match v.shown(cx) {
+                super::Shown::Image(_) => "image",
+                super::Shown::Loading => "loading",
+                super::Shown::Failed(t) => t,
+            });
+            if s != "loading" || std::time::Instant::now() > deadline {
+                break s;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert_eq!(shown, "image");
     }
 
     #[test]

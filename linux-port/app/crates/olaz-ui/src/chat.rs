@@ -112,6 +112,7 @@ pub struct ChatView {
     plus_menu: bool,
     forward: Option<Entity<crate::message_actions::ForwardSheet>>,
     sticker_picker: Option<Entity<crate::stickers::StickerPicker>>,
+    emoji_picker: Option<Entity<crate::emoji_picker::EmojiPicker>>,
     inspector: Option<Entity<crate::inspector::Inspector>>,
     poll_detail: Option<Entity<crate::polls::PollDetailSheet>>,
     /// "Biểu cảm" popover of a message's reactions.
@@ -197,6 +198,7 @@ impl ChatView {
             plus_menu: false,
             forward: None,
             sticker_picker: None,
+            emoji_picker: None,
             inspector: None,
             poll_detail: None,
             reaction_detail: None,
@@ -560,11 +562,28 @@ impl ChatView {
         }
     }
 
+    fn toggle_emoji_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.emoji_picker.take().is_none() {
+            self.sticker_picker = None;
+            let picker = cx.new(|cx| crate::emoji_picker::EmojiPicker::new(window, cx));
+            cx.subscribe_in(&picker, window, |this, _, ev: &crate::emoji_picker::EmojiPicked, window, cx| {
+                // Insert at the cursor (replacing a selection), keep the picker open.
+                this.composer.update(cx, |s, cx| s.replace(ev.0.clone(), window, cx));
+                this.draft = this.composer.read(cx).value().to_string();
+                cx.notify();
+            })
+            .detach();
+            self.emoji_picker = Some(picker);
+        }
+        cx.notify();
+    }
+
     fn toggle_sticker_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.sticker_picker.take().is_some() {
             cx.notify();
             return;
         }
+        self.emoji_picker = None;
         let conv = self.conversation.clone();
         let picker = cx.new(|cx| crate::stickers::StickerPicker::new(conv, window, cx));
         cx.subscribe(&picker, |this, _, _: &crate::stickers::StickerSent, cx| {
@@ -664,7 +683,7 @@ impl ChatView {
             Default::default()
         };
         let av: AnyElement = if is_self {
-            div().size(px(30.0)).rounded_full().bg(theme.accent).flex().items_center().justify_center().child(icon("cloud.fill", 13.0, theme.white())).into_any_element()
+            div().size(px(30.0)).rounded_full().bg(theme.content_bg()).border_1().border_color(theme.separator()).flex().items_center().justify_center().child(icon("cloud", 13.0, theme.accent)).into_any_element()
         } else {
             avatar(conv.as_ref().and_then(|c| c.avatar.as_deref()), &name, 30.0, cx)
         };
@@ -915,6 +934,7 @@ impl ChatView {
                         .items_center()
                         .justify_center()
                         .text_size(px(23.0))
+                        
                         .hover(|s| s.bg(with_alpha(theme.accent, 0.22)))
                         .child(e)
                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -969,7 +989,8 @@ impl ChatView {
                     .max_w_full()
                     .child(content)
                     .when_some(reactions, |el, r| {
-                        el.child(div().absolute().top(px(-12.0)).when(mine, |el| el.left(px(-10.0))).when(!mine, |el| el.right(px(-10.0))).child(r))
+                        // Like the macOS design: chips sit on the bubble's bottom edge, at its trailing end.
+                        el.child(div().absolute().bottom(px(-19.0)).right(px(8.0)).child(r))
                     }),
             )
             .children(status_line)
@@ -979,7 +1000,8 @@ impl ChatView {
             .id(SharedString::from(format!("msg-{id}")))
             .w_full()
             .px(px(16.0))
-            .pt(px((if first { 8.0 } else { 2.0 }) + if m.reactions.is_empty() { 0.0 } else { 10.0 }))
+            .pt(px(if first { 8.0 } else { 2.0 }))
+            .pb(px(if m.reactions.is_empty() { 0.0 } else { 18.0 }))
             .when(hovered, |el| el.pb(px(26.0)))
             .flex()
             .items_end()
@@ -1103,6 +1125,7 @@ impl ChatView {
                     self.bubble(m, false, false, (12.0, 8.0), body, cx)
                 });
                 let url_click = url.clone();
+                let origin = (self.conversation.clone(), m.id.clone());
                 div()
                     .flex()
                     .flex_col()
@@ -1112,9 +1135,9 @@ impl ChatView {
                             .id(SharedString::from(format!("photo-{}", m.id)))
                             .cursor_pointer()
                             .child(crate::widgets::message_picture(&self.conversation, &m.id, url.as_deref(), olaz_engine::media::MediaKind::Photo, w, h, 16.0, cx))
-                            .on_click(move |_, window, cx| {
+                            .on_click(move |_, _, cx| {
                                 if let Some(u) = &url_click {
-                                    crate::viewer::open_photo(u, window, cx);
+                                    crate::viewer::open_photo_of(u, Some(origin.clone()), cx);
                                 }
                             }),
                     )
@@ -1617,6 +1640,21 @@ impl ChatView {
                             )
                             .child(
                                 div()
+                                    .id("emoji-button")
+                                    .flex_none()
+                                    .size(px(28.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .hover(|s| s.bg(theme.hover()))
+                                    .when(self.emoji_picker.is_some(), |el| el.bg(with_alpha(theme.accent, 0.16)))
+                                    .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("Biểu tượng cảm xúc").build(window, cx))
+                                    .child(icon("face.smiling", 15.0, if self.emoji_picker.is_some() { theme.accent } else { theme.secondary() }))
+                                    .on_click(cx.listener(|this, _, window, cx| this.toggle_emoji_picker(window, cx))),
+                            )
+                            .child(
+                                div()
                                     .id("sticker-button")
                                     .flex_none()
                                     .size(px(28.0))
@@ -1626,7 +1664,8 @@ impl ChatView {
                                     .justify_center()
                                     .hover(|s| s.bg(theme.hover()))
                                     .when(self.sticker_picker.is_some(), |el| el.bg(with_alpha(theme.accent, 0.16)))
-                                    .child(icon("face.smiling", 15.0, if self.sticker_picker.is_some() { theme.accent } else { theme.secondary() }))
+                                    .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("Sticker").build(window, cx))
+                                    .child(icon("face.dashed", 15.0, if self.sticker_picker.is_some() { theme.accent } else { theme.secondary() }))
                                     .on_click(cx.listener(|this, _, window, cx| this.toggle_sticker_picker(window, cx))),
                             ),
                     )
@@ -1864,6 +1903,25 @@ impl Render for ChatView {
                 )
             })
             .when_some(self.sticker_picker.clone(), |el, p| el.child(div().absolute().bottom(px(64.0)).right(px(60.0)).child(p)))
+            .when_some(self.emoji_picker.clone(), |el, p| {
+                el.child(
+                    div()
+                        .id("emoji-backdrop")
+                        .absolute()
+                        .inset_0()
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                            this.emoji_picker = None;
+                            cx.notify();
+                        }))
+                        .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
+                            if ev.keystroke.key == "escape" {
+                                this.emoji_picker = None;
+                                cx.notify();
+                            }
+                        }))
+                        .child(div().absolute().bottom(px(64.0)).right(px(60.0)).on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(p)),
+                )
+            })
             .when_some(undo, |el, u| {
                 el.child(
                     div()
@@ -2052,7 +2110,10 @@ fn message_menu(menu: PopupMenu, m: &ChatMessage, view: gpui::WeakEntity<ChatVie
                 menu.submenu(label, window, cx, move |mut sub, _, _| {
                     for e in REACTION_EMOJIS {
                         let (conv, id) = (conv.clone(), id.clone());
-                        sub = sub.item(PopupMenuItem::new(e).on_click(move |_, _, cx| engine(cx).react(e, &id, &conv)));
+                        sub = sub.item(
+                            PopupMenuItem::element(move |_, _| div().text_size(px(16.0)).child(e))
+                                .on_click(move |_, _, cx| engine(cx).react(e, &id, &conv)),
+                        );
                     }
                     sub
                 })

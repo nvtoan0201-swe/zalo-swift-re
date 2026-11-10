@@ -17,6 +17,8 @@ pub struct Prefs {
     pub did_finish_setup: bool,
     pub setup_pending: bool,
     pub system_window_buttons: bool,
+    /// Recently used emoji, most recent first, space-separated.
+    pub emoji_recent: String,
 }
 
 impl Default for Prefs {
@@ -29,6 +31,7 @@ impl Default for Prefs {
             did_finish_setup: false,
             setup_pending: false,
             system_window_buttons: false,
+            emoji_recent: String::new(),
         }
     }
 }
@@ -55,6 +58,7 @@ impl AppPrefs {
                 did_finish_setup: b("olaz.didFinishSetup", false),
                 setup_pending: b("olaz.setupPending", false),
                 system_window_buttons: b("olaz.systemWindowButtons", false),
+                emoji_recent: s("olaz.emojiRecent", ""),
             },
             paths: paths.clone(),
         }
@@ -70,6 +74,7 @@ impl AppPrefs {
         store.set("olaz.didFinishSetup", Value::Bool(p.did_finish_setup));
         store.set("olaz.setupPending", Value::Bool(p.setup_pending));
         store.set("olaz.systemWindowButtons", Value::Bool(p.system_window_buttons));
+        store.set("olaz.emojiRecent", Value::String(p.emoji_recent.clone()));
         store.save();
     }
 

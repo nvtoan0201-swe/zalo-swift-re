@@ -167,7 +167,7 @@ impl MediaResolver {
 impl ZaloEngine {
     /// `window.__zaloChat.resolveMedia(conv, msgId, kind)`: local copy → official download path → "expired".
     pub async fn resolve_media(&self, conversation: &str, message: &str, kind: MediaKind, force: bool) -> MediaResolution {
-        if self.host().is_none() {
+        if self.host().is_none() && self.fake_renderer.borrow().is_none() {
             return MediaResolution::Unavailable;
         }
         let key = format!("{conversation}|{message}|{}", kind.raw());

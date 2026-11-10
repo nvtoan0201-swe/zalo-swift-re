@@ -14,7 +14,8 @@ trap 'rm -rf "$WORK"' EXIT
 INTER_ZIP="https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip"
 NUNITO="https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf"
 NUNITO_OFL="https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/OFL.txt"
-EMOJI="https://raw.githubusercontent.com/google/fonts/main/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf"
+# The CBDT (color bitmap) build: GPUI draws CBDT emoji in color, the COLRv1 build only as monochrome outlines.
+EMOJI="https://raw.githubusercontent.com/googlefonts/noto-emoji/main/2D/fonts/NotoColorEmoji.ttf"
 EMOJI_OFL="https://raw.githubusercontent.com/google/fonts/main/ofl/notocoloremoji/OFL.txt"
 
 mkdir -p "$DEST"

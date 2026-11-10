@@ -44,6 +44,8 @@ pub enum Panel {
     CreateGroup,
     /// The composer's sticker picker for a conversation (Linux-only hover scene).
     Stickers { conversation: &'static str },
+    /// The composer's emoji picker.
+    Emoji,
 }
 
 const GROUP: &str = "g3000000000000000003";
@@ -78,6 +80,7 @@ pub const CATALOG: &[&str] = &[
     "S18-create-group-loading",
     // Linux-only: sticker picker with a sprite sticker, for the hover animation check (tools/sticker-hover-check.py).
     "L-sticker-hover",
+    "L-emoji-picker",
 ];
 
 pub fn spec(id: &str) -> Option<SceneSpec> {
@@ -103,6 +106,7 @@ pub fn spec(id: &str) -> Option<SceneSpec> {
         "S14-notifications" => panel("base-account", 520.0, 440.0, Panel::Settings { tab: Tab::Notifications, form_only: true }),
         "S18-create-group-loading" => panel("base-account", 440.0, 640.0, Panel::CreateGroup),
         "L-sticker-hover" => panel("stickers", 360.0, 420.0, Panel::Stickers { conversation: "2000000000000000002" }),
+        "L-emoji-picker" => panel("base-account", 372.0, 420.0, Panel::Emoji),
         _ => return None,
     })
 }
@@ -140,6 +144,7 @@ impl gpui::Render for PanelHost {
                 }
                 Panel::Settings { tab, form_only } => cx.new(|_| crate::settings_window::SettingsView::new(tab, form_only)).into(),
                 Panel::CreateGroup => cx.new(|cx| crate::group_create::CreateGroupSheet::new(vec![], window, cx)).into(),
+                Panel::Emoji => cx.new(|cx| crate::emoji_picker::EmojiPicker::new(window, cx)).into(),
                 Panel::Stickers { conversation } => {
                     crate::app::engine(cx).state.borrow_mut().open_conversation_id = Some(conversation.into());
                     cx.new(|cx| crate::stickers::StickerPicker::new(conversation.into(), window, cx)).into()

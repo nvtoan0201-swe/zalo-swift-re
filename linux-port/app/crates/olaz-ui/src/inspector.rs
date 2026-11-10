@@ -195,6 +195,7 @@ impl Inspector {
             _ => (None, olaz_engine::media::MediaKind::Photo),
         };
         let is_video = matches!(m.kind, Kind::Video { .. });
+        let (origin_conv, origin_msg) = (m.conversation_id.clone(), m.id.clone());
         let full = match &m.kind {
             Kind::Photo { url, .. } => url.clone().map(|u| (u, false)),
             Kind::Video { url, .. } => url.clone().map(|u| (u, true)),
@@ -211,8 +212,8 @@ impl Inspector {
             .when(is_video, |el| {
                 el.child(div().absolute().inset_0().flex().items_center().justify_center().child(icon("play.circle.fill", side * 0.3, gpui::white())))
             })
-            .on_click(move |_, window, cx| match &full {
-                Some((u, false)) => crate::viewer::open_photo(u, window, cx),
+            .on_click(move |_, _, cx| match &full {
+                Some((u, false)) => crate::viewer::open_photo_of(u, Some((origin_conv.clone(), origin_msg.clone())), cx),
                 Some((u, true)) => crate::viewer::open_video(u, cx),
                 None => {}
             })

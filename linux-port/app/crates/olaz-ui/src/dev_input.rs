@@ -1,7 +1,7 @@
 //! Dev input channel (debug builds with `OLAZ_DEV_EVAL=1`): `<data root>/dev/input.json` holds a list of synthetic
 //! events dispatched to the main window through GPUI's own input path (the X11 backend reads only XInput2, so tools
 //! like xdotool cannot drive it headless). Events: `{"t":"click"|"rclick"|"move","x":..,"y":..}`, `{"t":"key","k":"ctrl-c"}`,
-//! `{"t":"type","s":"text"}`, `{"t":"wait","ms":..}`, `{"t":"play","path":..,"audio":bool}` (player window). Add `"win":"last"` to send an event to the newest window. Writes `input.out.txt` when done.
+//! `{"t":"type","s":"text"}`, `{"t":"wait","ms":..}`, `{"t":"play","path":..,"audio":bool}` (player window), `{"t":"photo","url":..}` (photo viewer). Add `"win":"last"` to send an event to the newest window. Writes `input.out.txt` when done.
 
 use std::time::Duration;
 
@@ -49,6 +49,12 @@ pub fn start_if_enabled(window: AnyWindowHandle, cx: &mut App) {
                     if let Some(saved) = saved {
                         cx.update(|cx| cx.write_to_clipboard(saved));
                     }
+                    continue;
+                }
+                if ev["t"] == "photo" {
+                    let url = ev["url"].as_str().unwrap_or("").to_string();
+                    cx.update(|cx| crate::viewer::open_photo_of(&url, None, cx));
+                    log.push(format!("{ev} → opened"));
                     continue;
                 }
                 if ev["t"] == "play" {

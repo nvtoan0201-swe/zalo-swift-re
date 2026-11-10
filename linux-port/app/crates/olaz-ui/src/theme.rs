@@ -4,6 +4,7 @@ use gpui::{App, Global, Hsla, Rgba, rgba};
 
 pub const FONT: &str = "Inter Variable";
 pub const ROUNDED: &str = "Nunito";
+pub const EMOJI_FONT: &str = "Noto Color Emoji";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Appearance {

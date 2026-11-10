@@ -1867,6 +1867,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "emojis"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99e1f1df1f181f2539bac8bf027d31ca5ffbf9e559e3f2d09413b9107b5c02f4"
+dependencies = [
+ "phf 0.11.3",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3255,8 +3264,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-wgpu"
 version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "211cf352de1a0b0c9bea3f105df5572ce1d2c899389b924a888e5af36b50f93d"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -5576,6 +5583,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "emojis",
  "futures",
  "gpui-component",
  "gpui-kit-assets",
