@@ -6,6 +6,7 @@ pub mod clock;
 pub mod cookies;
 pub mod crypto;
 pub mod exec;
+pub mod fingerprint;
 pub mod log;
 pub mod paths;
 pub mod scheme;

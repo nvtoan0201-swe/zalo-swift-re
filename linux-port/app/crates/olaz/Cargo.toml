@@ -16,3 +16,4 @@ olaz-main = { path = "../olaz-main" }
 olaz-ui = { path = "../olaz-ui" }
 serde_json.workspace = true
 url = "2"
+log.workspace = true

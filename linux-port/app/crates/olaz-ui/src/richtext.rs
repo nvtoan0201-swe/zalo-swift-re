@@ -1,7 +1,10 @@
 //! Message text with links and @mentions: links underlined (white on my bubble), mentions semibold
 //! in the accent (white on mine), mentions of everyone highlighted. Emoji are drawn with the color emoji font.
 
-use gpui::{AnyElement, FontWeight, HighlightStyle, IntoElement, ParentElement, SharedString, Styled, StyledText, TextRun, UnderlineStyle, div, px};
+use gpui::{
+    AnyElement, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement, ParentElement, SharedString, Styled, StyledText, TextRun,
+    UnderlineStyle, div, px,
+};
 use olaz_engine::models::Mention;
 
 use crate::theme::{Theme, with_alpha};
@@ -20,8 +23,14 @@ pub fn byte_index(s: &str, utf16: usize) -> usize {
 
 /// Highlight ranges (byte ranges) for links and mentions.
 pub fn spans(text: &str, mentions: &[Mention]) -> (Vec<std::ops::Range<usize>>, Vec<(std::ops::Range<usize>, bool)>) {
-    let finder = linkify::LinkFinder::new();
-    let links: Vec<_> = finder.links(text).filter(|l| *l.kind() == linkify::LinkKind::Url).map(|l| l.start()..l.end()).collect();
+    // Like the official client, bare domains ("zalo.me/g/abc", "www.example.com") are links too.
+    let mut finder = linkify::LinkFinder::new();
+    finder.url_must_have_scheme(false);
+    let links: Vec<_> = finder
+        .links(text)
+        .filter(|l| *l.kind() == linkify::LinkKind::Url && (l.as_str().contains("://") || is_bare_domain_link(l.as_str())))
+        .map(|l| l.start()..l.end())
+        .collect();
     let mut ms = Vec::new();
     for m in mentions {
         if m.pos < 0 || m.len <= 0 {
@@ -36,8 +45,30 @@ pub fn spans(text: &str, mentions: &[Mention]) -> (Vec<std::ops::Range<usize>>, 
     (links, ms)
 }
 
-pub fn message_text(text: &str, mentions: &[Mention], mine: bool, size: f32, theme: &Theme) -> AnyElement {
+/// A link written without a scheme counts only as `www.…` or with a common top-level domain, so file names
+/// ("bao-cao.pdf") and sentences without a space after the period are not links.
+fn is_bare_domain_link(found: &str) -> bool {
+    const TLDS: [&str; 30] = [
+        "com", "net", "org", "vn", "me", "io", "co", "info", "biz", "edu", "gov", "app", "dev", "xyz", "ai", "tv", "us", "uk", "asia",
+        "shop", "site", "online", "store", "link", "ly", "gl", "gg", "to", "cc", "page",
+    ];
+    let host = found.split(['/', '?', '#', ':']).next().unwrap_or("").to_ascii_lowercase();
+    if !host.is_ascii() {
+        return false;
+    }
+    host.starts_with("www.") || host.rsplit('.').next().is_some_and(|tld| TLDS.contains(&tld))
+}
+
+/// The URL to open for a link found in the text: bare domains get `https://`.
+pub fn link_target(found: &str) -> String {
+    if found.contains("://") || found.to_ascii_lowercase().starts_with("mailto:") { found.to_string() } else { format!("https://{found}") }
+}
+
+/// Message text; clicking a link opens it (group invites in the native sheet, others in the browser).
+pub fn message_text(id: impl Into<ElementId>, conv: &str, text: &str, mentions: &[Mention], mine: bool, size: f32, theme: &Theme) -> AnyElement {
     let (links, ms) = spans(text, mentions);
+    let targets: Vec<String> = links.iter().map(|r| link_target(&text[r.clone()])).collect();
+    let link_ranges = links.clone();
     let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
     let link_color = if mine { theme.white() } else { theme.accent };
     for r in links {
@@ -62,8 +93,26 @@ pub fn message_text(text: &str, mentions: &[Mention], mine: bool, size: f32, the
     div()
         .text_size(px(size))
         .line_height(px((size * 1.25).round()))
-        .child(StyledText::new(SharedString::from(text.to_string())).with_runs(text_runs(text, &clean, base)))
+        .child(
+            InteractiveText::new(id, StyledText::new(SharedString::from(text.to_string())).with_runs(text_runs(text, &clean, base))).on_click(
+                link_ranges,
+                {
+                    let conv = conv.to_string();
+                    move |i, _, cx| {
+                        if let Some(url) = targets.get(i) {
+                            crate::cards::open_link(&conv, url, cx);
+                        }
+                    }
+                },
+            ),
+        )
         .into_any_element()
+}
+
+/// Text drawn with the color emoji font first (a plain div would take ❤ and other text-default symbols from a
+/// monochrome font).
+pub fn emoji_text(text: &str, color: gpui::Hsla) -> StyledText {
+    StyledText::new(SharedString::from(text.to_string())).with_runs(text_runs(text, &[], color))
 }
 
 /// Whether `c` belongs to an emoji sequence (pictographs, symbols with emoji presentation, joiners, variation
@@ -121,10 +170,13 @@ fn text_runs(text: &str, highlights: &[(std::ops::Range<usize>, HighlightStyle)]
             continue;
         }
         let style = highlights.iter().find(|(r, _)| r.start <= a && b <= r.end).map(|(_, s)| s.clone()).unwrap_or_default();
-        // Emoji-only fonts cannot be a primary font in GPUI: every run is Inter with the color emoji font first in
-        // its fallback chain (the system fallback would pick DejaVu Sans' monochrome emoticons).
-        let mut font = gpui::font(crate::theme::FONT);
-        font.fallbacks = Some(gpui::FontFallbacks::from_fonts(vec![crate::theme::EMOJI_FONT.to_string()]));
+        // Emoji runs are set in the color emoji font (allowed as a primary font by the vendored text system): Inter
+        // has monochrome glyphs of its own for ❤, ☀, ★… Other runs are Inter with the emoji font first in the
+        // fallback chain (the system fallback would pick DejaVu Sans' monochrome emoticons).
+        let is_emoji = emoji.iter().any(|r| r.start <= a && b <= r.end);
+        let (family, fallback) = if is_emoji { (crate::theme::EMOJI_FONT, crate::theme::FONT) } else { (crate::theme::FONT, crate::theme::EMOJI_FONT) };
+        let mut font = gpui::font(family);
+        font.fallbacks = Some(gpui::FontFallbacks::from_fonts(vec![fallback.to_string()]));
         if let Some(w) = style.font_weight {
             font.weight = w;
         }
@@ -152,7 +204,9 @@ mod tests {
         assert!(emoji_ranges("Xin chào, 12 giờ").is_empty());
         let runs = text_runs("a😀b", &[], gpui::black());
         assert_eq!(runs.iter().map(|r| r.len).collect::<Vec<_>>(), [1, 4, 1]);
-        assert!(runs[1].font.fallbacks.as_ref().is_some_and(|f| f.fallback_list().iter().any(|n| n == crate::theme::EMOJI_FONT)));
+        assert_eq!(runs[1].font.family.as_ref(), crate::theme::EMOJI_FONT);
+        assert_eq!(runs[0].font.family.as_ref(), crate::theme::FONT);
+        assert!(runs[0].font.fallbacks.as_ref().is_some_and(|f| f.fallback_list().iter().any(|n| n == crate::theme::EMOJI_FONT)));
         assert_eq!(runs.iter().map(|r| r.len).sum::<usize>(), "a😀b".len());
     }
 
@@ -163,6 +217,13 @@ mod tests {
         let (links, ms) = spans("😀 @An xem https://zalo.me/x", &[m]);
         assert_eq!(ms, vec![(5..8, false)]);
         assert_eq!(links.len(), 1);
+        let t = "vào zalo.me/g/abc hoặc www.example.com nhé";
+        let found: Vec<String> = spans(t, &[]).0.into_iter().map(|r| link_target(&t[r])).collect();
+        assert_eq!(found, ["https://zalo.me/g/abc", "https://www.example.com"]);
+        for plain in ["file.pdf", "Ừ.Thế à", "bao.cao.docx", "hello.world", "1.5 triệu"] {
+            assert!(spans(plain, &[]).0.is_empty(), "{plain}");
+        }
+        assert_eq!(spans("tiktok.com/@abc https://chat.zalo.me/c", &[]).0.len(), 2);
         let bad = Mention { uid: "1".into(), pos: 0, len: 2, is_all: false };
         assert!(spans("hi there", &[bad]).1.is_empty());
     }

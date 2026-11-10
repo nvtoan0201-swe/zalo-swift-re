@@ -73,7 +73,7 @@ pub fn run(config: UiConfig) {
 
         let exec: olaz_core::exec::Exec =
             Rc::new(crate::exec::GpuiExecutor { fg: cx.foreground_executor().clone(), bg: cx.background_executor().clone() });
-        let ua = olaz_core::user_agent(olaz_core::CLIENT_TYPE, olaz_core::CLIENT_VERSION);
+        let ua = olaz_core::fingerprint::user_agent();
         let mut roots = vec![config.paths.user_data(), config.paths.cache()];
         if let Some((scene, _)) = &render {
             // Fixture media are `file://` URLs under the fixtures directory.
@@ -135,6 +135,7 @@ pub fn run(config: UiConfig) {
                 }
             })
             .expect("main window");
+        cx.set_global(crate::chrome::MainWindow(window.into()));
         crate::dev_input::start_if_enabled(window.into(), cx);
         cx.on_app_quit(|cx| {
             let engine = crate::app::engine(cx);

@@ -53,7 +53,9 @@ impl PhotoViewer {
 impl Render for PhotoViewer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content = match self.shown(cx) {
-            Shown::Image(image) => img(image).size_full().object_fit(ObjectFit::Contain).into_any_element(),
+            // Absolutely positioned so the size is the area's, never derived from the photo's aspect ratio (a portrait
+            // photo would otherwise grow past the window and show only its top).
+            Shown::Image(image) => img(image).absolute().inset_0().size_full().object_fit(ObjectFit::Contain).into_any_element(),
             Shown::Loading => div().size_full().flex().items_center().justify_center().child(spinner(22.0, gpui::white())).into_any_element(),
             Shown::Failed(text) => div().size_full().flex().items_center().justify_center().text_color(gpui::white()).child(text).into_any_element(),
         };
@@ -63,7 +65,7 @@ impl Render for PhotoViewer {
                 .relative()
                 .bg(gpui::black())
                 .rounded(crate::chrome::inner_radius(window))
-                .child(div().absolute().inset_0().pt(px(36.0)).child(content))
+                .child(div().absolute().top(px(36.0)).bottom_0().left_0().right_0().overflow_hidden().child(content))
                 .child(crate::chrome::titlebar_overlay_on_dark(36.0, window, cx)),
             window,
             cx,
@@ -75,7 +77,7 @@ impl Render for PhotoViewer {
 pub fn open_photo_of(url: &str, origin: Option<(String, String)>, cx: &mut App) {
     let bounds = Bounds::centered(None, size(px(900.0), px(700.0)), cx);
     let url = url.to_string();
-    let _ = cx.open_window(
+    let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions { title: Some("Ảnh".into()), appears_transparent: true, traffic_light_position: None }),
@@ -89,6 +91,9 @@ pub fn open_photo_of(url: &str, origin: Option<(String, String)>, cx: &mut App) 
             cx.new(|cx| crate::chrome::root(view, window, cx))
         },
     );
+    if let Ok(h) = opened {
+        crate::dev_input::note_window(h.into());
+    }
 }
 
 /// Opens a photo that is not tied to a message (zCloud files, local files).

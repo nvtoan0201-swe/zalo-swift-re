@@ -16,6 +16,7 @@ olaz-runtime = { path = "../olaz-runtime" }
 olaz-media = { path = "../olaz-media" }
 serde_json.workspace = true
 base64.workspace = true
+percent-encoding.workspace = true
 futures = "0.3"
 url = "2"
 unicode-normalization = "0.1"

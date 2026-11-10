@@ -502,6 +502,26 @@ impl Inspector {
             }
             body = body.child(Self::section(title, see, &theme).child(b));
         }
+        if e.conversation_menu_plan(&id, olaz_engine::conversation_actions::MenuPreset::ChatBox).can_leave {
+            let id = id.clone();
+            body = body.child(
+                Self::list_box(&theme).child(
+                    div()
+                        .id("insp-leave-group")
+                        .px(px(12.0))
+                        .py(px(10.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.hover()))
+                        .text_color(theme.red())
+                        .child(crate::icon::icon("rectangle.portrait.and.arrow.right", 14.0, theme.red()))
+                        .child(div().text_size(px(13.0)).child("Rời nhóm"))
+                        .on_click(move |_, _, cx| engine(cx).request_leave_group(&id)),
+                ),
+            );
+        }
         div().id("inspector-overview").size_full().overflow_y_scroll().child(body).into_any_element()
     }
 

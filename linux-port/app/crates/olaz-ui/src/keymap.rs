@@ -17,6 +17,7 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &QuickSwitch, cx| crate::shell::request_switcher(cx));
     cx.on_action(|_: &OpenSettings, cx| crate::settings_window::open_window(cx));
+    cx.on_action(|_: &ToggleSidebar, cx| crate::shell::toggle_sidebar(cx));
     cx.on_action(|_: &ToggleInspector, cx| {
         crate::inspector::toggle_shown();
         cx.refresh_windows();

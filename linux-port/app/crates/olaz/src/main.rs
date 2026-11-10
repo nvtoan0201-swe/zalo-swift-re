@@ -31,10 +31,29 @@ fn paths() -> XdgPaths {
     }
 }
 
+/// GPUI / wgpu diagnostics (adapter choice, surface alpha mode, warnings) → engine.log.
+struct RenderLog;
+
+impl log::Log for RenderLog {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        let t = m.target();
+        (t.starts_with("gpui") || t.starts_with("wgpu")) && (m.level() <= log::Level::Warn || (m.level() == log::Level::Info && t.starts_with("gpui")))
+    }
+    fn log(&self, r: &log::Record) {
+        if self.enabled(r.metadata()) {
+            olaz_core::log::write(format!("render {} {}: {}", r.level(), r.target(), r.args()));
+        }
+    }
+    fn flush(&self) {}
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let paths = paths();
     olaz_core::log::EngineLog::install(olaz_core::log::EngineLog::open(&paths.logs()));
+    if log::set_logger(&RenderLog).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
     let debug = cfg!(debug_assertions);
     match args.first().map(String::as_str) {
         Some("--engine-probe") => probe::run(paths, services(debug), &args[1..]),

@@ -47,10 +47,19 @@ fn window_controls_with(theme: Theme, window: &Window) -> impl IntoElement {
                 .on_click(|_, window, _| window.zoom_window()),
         )
         .child(button("wc-close", "icons/window-close.svg").on_click(|_, window, cx| {
+            // Only the main window ends the app; media and settings windows just close.
+            let main = cx.try_global::<MainWindow>().map(|m| m.0);
+            let is_main = main.is_none_or(|m| m == window.window_handle());
             window.remove_window();
-            cx.quit();
+            if is_main {
+                cx.quit();
+            }
         }))
 }
+
+/// The main (chat) window: closing it quits the app.
+pub struct MainWindow(pub gpui::AnyWindowHandle);
+impl gpui::Global for MainWindow {}
 
 /// [`titlebar_overlay`] for windows whose content is black (photo viewer, player): buttons in the dark-theme colors
 /// whatever the app's appearance, so they stay visible.

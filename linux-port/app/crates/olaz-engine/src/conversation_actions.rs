@@ -127,11 +127,13 @@ pub struct ConversationMenuPlan {
     pub can_delete: bool,
     /// "Phân loại" (official `showLabel`).
     pub shows_label: bool,
+    /// "Rời nhóm": a group the user is still a member of.
+    pub can_leave: bool,
 }
 
 impl ConversationMenuPlan {
     pub fn is_empty(&self) -> bool {
-        self.pin.is_none() && self.archive.is_none() && self.read.is_none() && self.mute.is_none() && self.hide.is_none() && !self.can_delete && !self.shows_label
+        self.pin.is_none() && self.archive.is_none() && self.read.is_none() && self.mute.is_none() && self.hide.is_none() && !self.can_delete && !self.shows_label && !self.can_leave
     }
 
     pub fn make(id: &str, preset: MenuPreset, state: &ConversationActionsState, unread: i64, muted: bool) -> Self {
@@ -176,6 +178,7 @@ impl ConversationMenuPlan {
             }
         }
         plan.can_delete = thread && !has(flag::CANNOT_DELETE);
+        plan.can_leave = is_group_id(id);
         plan
     }
 }
@@ -246,6 +249,11 @@ impl PinBoard {
     }
 }
 
+/// Group conversation ids carry the official `GROUPID_PREFIX`.
+pub fn is_group_id(id: &str) -> bool {
+    id.starts_with('g')
+}
+
 /// A dialog / sheet a conversation action asks the shell to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConversationPrompt {
@@ -257,6 +265,8 @@ pub enum ConversationPrompt {
     Unlock(String),
     /// "Quản lý thẻ phân loại".
     LabelManager,
+    /// "Rời nhóm" confirm; `owner` = the user created the group (ownership passes to another member).
+    LeaveGroup { id: String, owner: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,6 +341,11 @@ pub const DELETE_LINE1: &str = "Toàn bộ nội dung trò chuyện sẽ bị x�
 pub const DELETE_LINE2: &str = "Bạn có chắc chắn muốn xóa?";
 pub const DELETE_CONFIRM: &str = "Xóa";
 pub const DELETE_CANCEL: &str = "Không";
+/// Official STR_GROUP_LEAVE_CONFIRM / STR_LEAVEGROUP_MENU / STR_CHECK_NET.
+pub const LEAVE_TITLE: &str = "Rời nhóm?";
+pub const LEAVE_MESSAGE: &str = "Rời nhóm sẽ đồng thời xóa toàn bộ tin nhắn của nhóm đó. Bạn có muốn tiếp tục?";
+pub const LEAVE_OWNER_MESSAGE: &str = "Rời nhóm sẽ xóa toàn bộ tin nhắn. Quyền trưởng nhóm sẽ được trao ngẫu nhiên cho thành viên khác";
+pub const LEAVE_CONFIRM: &str = "Rời nhóm";
 
 // MARK: Hidden chat PIN flow (pure)
 
@@ -653,6 +668,46 @@ impl ZaloEngine {
         });
     }
 
+    /// Asks whether the user owns the group (for the confirm's wording), then shows the confirm.
+    pub fn request_leave_group(&self, id: &str) {
+        let Some(me) = self.weak().upgrade() else { return };
+        let id = id.to_string();
+        spawn(&self.exec, async move {
+            let script = format!("const g = window.__zaloGroupLeave; return g ? g.isOwner(...[{}]) : false;", json!(id));
+            let timer = me.exec.timer(Duration::from_secs(3));
+            let call = me.evaluate(&script);
+            futures::pin_mut!(call);
+            let owner = match futures::future::select(call, timer).await {
+                futures::future::Either::Left((v, _)) => v.and_then(|v| v.as_bool()).unwrap_or(false),
+                futures::future::Either::Right(_) => false,
+            };
+            me.set_conversation_prompt(Some(ConversationPrompt::LeaveGroup { id, owner }));
+        });
+    }
+
+    /// Leaves the group through the official fetcher (`window.__zaloGroupLeave`, Linux adapter); the conversation
+    /// leaves the list on success.
+    pub fn confirm_leave_group(&self, id: &str) {
+        let Some(me) = self.weak().upgrade() else { return };
+        let id = id.to_string();
+        spawn(&self.exec, async move {
+            let script = format!("const g = window.__zaloGroupLeave; if (!g) return null; return await g.leave(...[{}]);", json!(id));
+            let timer = me.exec.timer(Duration::from_secs(45));
+            let call = me.evaluate(&script);
+            futures::pin_mut!(call);
+            let r = match futures::future::select(call, timer).await {
+                futures::future::Either::Left((v, _)) => ConversationActionResult::from_json(v.as_ref()),
+                futures::future::Either::Right(_) => ConversationActionResult::failed(STILL_RUNNING),
+            };
+            if r.ok {
+                me.conv_ui(|ui| ui.remove(HashSet::from([id.clone()])));
+            } else {
+                olaz_core::log::write("conversation action leaveGroup → failed");
+            }
+            me.report_conv(&r);
+        });
+    }
+
     pub fn mark_conversation_read(&self, id: &str) {
         self.run_conv("markRead", vec![json!(id)], 40, |e, r| e.report_conv(r));
     }
@@ -811,6 +866,59 @@ impl ZaloEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fake_engine(t: &std::rc::Rc<olaz_core::exec::TestExecutor>, dir: &std::path::Path, answers: Value) -> std::rc::Rc<ZaloEngine> {
+        let e = ZaloEngine::new(
+            t.exec(),
+            olaz_core::paths::XdgPaths::rooted(dir),
+            crate::Services {
+                media: None,
+                secrets: std::sync::Arc::new(olaz_main::secrets::MemoryStore::default()),
+                open_url: std::rc::Rc::new(|_| {}),
+                badge: None,
+                webhost_binary: "/nonexistent".into(),
+                debug: false,
+            },
+        );
+        *e.fake_renderer.borrow_mut() = Some(std::rc::Rc::new(crate::fixtures::FakeRenderer::new(answers.as_object().unwrap())));
+        e
+    }
+
+    #[test]
+    fn leave_group_confirms_then_leaves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = olaz_core::exec::TestExecutor::new();
+        let e = fake_engine(&t, tmp.path(), json!({
+            "__zaloGroupLeave.isOwner": true,
+            "__zaloGroupLeave.leave": {"$seq": [{"ok": true, "text": "Bạn đã rời nhóm"}, {"ok": false, "text": "Vui lòng kiểm tra lại kết nối mạng của bạn."}]}
+        }));
+        e.request_leave_group("g42");
+        t.run_until_stalled();
+        assert_eq!(e.state.borrow().conversation_prompt, Some(ConversationPrompt::LeaveGroup { id: "g42".into(), owner: true }));
+        e.set_conversation_prompt(None);
+        e.confirm_leave_group("g42");
+        t.run_until_stalled();
+        {
+            let s = e.state.borrow();
+            assert!(s.conversation_ui.removal.as_ref().is_some_and(|(_, ids)| ids.contains("g42")));
+            let toast = s.conversation_ui.toast.clone().unwrap();
+            assert_eq!((toast.kind, toast.text.as_str()), (ToastKind::Success, "Bạn đã rời nhóm"));
+        }
+        e.confirm_leave_group("g43");
+        t.run_until_stalled();
+        let s = e.state.borrow();
+        assert!(!s.conversation_ui.removal.as_ref().unwrap().1.contains("g43"), "a failed leave keeps the conversation");
+        assert_eq!(s.conversation_ui.toast.as_ref().unwrap().kind, ToastKind::Failure);
+    }
+
+    #[test]
+    fn leave_group_is_offered_for_groups_still_joined() {
+        let s = state(json!({}));
+        assert!(ConversationMenuPlan::make("g1", MenuPreset::Thread, &s, 0, false).can_leave);
+        assert!(ConversationMenuPlan::make("g1", MenuPreset::ChatBox, &s, 0, false).can_leave);
+        assert!(!ConversationMenuPlan::make("123", MenuPreset::Thread, &s, 0, false).can_leave);
+        assert!(!ConversationMenuPlan::make("g9", MenuPreset::Thread, &s, 0, false).can_leave, "already left / disbanded");
+    }
 
     fn state(flags: Value) -> ConversationActionsState {
         let mut s = ConversationActionsState::default();

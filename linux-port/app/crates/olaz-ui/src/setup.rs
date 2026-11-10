@@ -385,7 +385,10 @@ pub fn qr_image(png: &[u8]) -> Arc<Image> {
             return img.clone();
         }
     }
-    let img = Arc::new(Image::from_bytes(ImageFormat::Png, png.to_vec()));
+    // PNG from the server, SVG for the QRs the official page draws itself (trusted-device QR2).
+    let trimmed = png.trim_ascii_start();
+    let format = crate::widgets::detect_format(trimmed).unwrap_or(ImageFormat::Png);
+    let img = Arc::new(Image::from_bytes(format, png.to_vec()));
     *last = Some((hash, img.clone()));
     img
 }

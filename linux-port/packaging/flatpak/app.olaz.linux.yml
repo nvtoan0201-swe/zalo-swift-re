@@ -9,6 +9,7 @@ runtime-version: '51'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.golang
 command: olaz
 finish-args:
   - --socket=wayland
@@ -41,6 +42,25 @@ modules:
         sha256: a4e374c8f864f51df48c2cfd0e1413ec3b2ea030deae852d6a655402ebb61ac4
         strip-components: 0
 
+  # Chromium 108 TLS / HTTP-2 fingerprint helper (Go). Offline build from fingerprint-helper/vendor
+  # (`fingerprint-helper/build.sh --vendor` before flatpak-builder).
+  - name: fingerprint-helper
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin
+      env:
+        CGO_ENABLED: '0'
+        GOFLAGS: -mod=vendor
+        GOTOOLCHAIN: local
+        GOCACHE: /run/build/fingerprint-helper/go-cache
+    build-commands:
+      - go build -trimpath -ldflags="-s -w" -o /app/bin/olaz-fingerprint-helper .
+    sources:
+      - type: dir
+        path: ../../fingerprint-helper
+        skip:
+          - build
+
   - name: olaz
     buildsystem: simple
     build-commands:
@@ -51,6 +71,7 @@ modules:
         path: ../..
         skip:
           - app/target
+          - fingerprint-helper
           - build-flatpak
           - .flatpak-builder
       - cargo-sources.json

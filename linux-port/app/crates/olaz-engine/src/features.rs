@@ -24,7 +24,7 @@ pub fn handle(engine: &ZaloEngine, key: &str, state: &Map<String, Value>) {
 
 pub fn install_modules(main: &Rc<MainProcess>, engine: &Rc<ZaloEngine>) {
     let loader = engine.media_loader().unwrap_or_else(|| {
-        let ua = olaz_core::user_agent(olaz_core::CLIENT_TYPE, olaz_core::CLIENT_VERSION);
+        let ua = olaz_core::fingerprint::user_agent();
         olaz_media::MediaLoader::new(&engine.paths.cache(), vec![engine.paths.user_data(), engine.paths.cache()], &ua)
     });
     let downloads = olaz_media::download::DownloadManager::new(loader, engine.paths.cache().join("download-tmp"));

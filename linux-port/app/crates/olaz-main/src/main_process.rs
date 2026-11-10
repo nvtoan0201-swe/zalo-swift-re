@@ -43,6 +43,56 @@ pub const GLOBALS: [&str; 41] = [
     "$znoti", "$zsqlite", "__SENTRY_IPC__", "MetriczGlobal",
 ];
 
+/// Where the official client's data access layer keeps its databases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageBackend {
+    /// The official "migration disabled" branch: IndexedDB in WebKit (Olaz before the SQLite host).
+    IndexedDb,
+    /// Native SQLite through `sqlite-host.js` + `SqliteHost`, as Zalo PC 26.10 runs after its migration.
+    Sqlite,
+}
+
+impl StorageBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StorageBackend::IndexedDb => "idb",
+            StorageBackend::Sqlite => "sqlite",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "idb" => Some(StorageBackend::IndexedDb),
+            "sqlite" => Some(StorageBackend::Sqlite),
+            _ => None,
+        }
+    }
+}
+
+const STORAGE_STORE: &str = "olaz-storage";
+
+/// Chosen once per install (`olaz-storage.json`): installs that already hold IndexedDB data stay on it (the official
+/// IndexedDB → SQLite migration needs Electron's SQLite window), fresh installs start on SQLite, and
+/// `OLAZ_STORAGE=idb|sqlite` overrides for a run.
+pub fn choose_storage(platform: &ZaloPlatform) -> StorageBackend {
+    if let Some(forced) = std::env::var("OLAZ_STORAGE").ok().as_deref().and_then(StorageBackend::parse) {
+        return forced;
+    }
+    if let Some(saved) = platform.read_store(STORAGE_STORE).get("backend").and_then(Value::as_str).and_then(StorageBackend::parse) {
+        return saved;
+    }
+    // An install that already ran the official client holds its data in IndexedDB; keep it readable.
+    let chosen = if platform.store_path("database-config").exists() { StorageBackend::IndexedDb } else { StorageBackend::Sqlite };
+    write_storage_choice(platform, chosen);
+    chosen
+}
+
+fn write_storage_choice(platform: &ZaloPlatform, backend: StorageBackend) {
+    let mut store = serde_json::Map::new();
+    store.insert("backend".into(), Value::String(backend.as_str().into()));
+    store.insert("chosenAt".into(), Value::from(olaz_core::clock::now_ms()));
+    let _ = platform.write_store(STORAGE_STORE, &store);
+}
+
 type EventSink = Rc<dyn Fn(MainEvent)>;
 type HostHook = Rc<dyn Fn(&Rc<ClientHost>)>;
 
@@ -71,10 +121,17 @@ pub struct MainProcess {
     /// Dock/launcher badge.
     pub badge: RefCell<Option<Rc<dyn Fn(i64)>>>,
     pub trace_workers: bool,
+    /// Where the databases live (chosen at start, `choose_storage`).
+    pub storage: StorageBackend,
+    /// The native SQLite executor behind `$znode.sqliteHost.*` (SQLite backend only).
+    pub sqlite: Option<Arc<crate::sqlite_host::SqliteHost>>,
 }
 
 impl MainProcess {
     pub fn new(platform: Rc<ZaloPlatform>, jar: Arc<CookieJar>, secrets: Arc<dyn SecretStore>, webhost: Rc<WebHostProcess>, exec: Exec) -> Rc<Self> {
+        let storage = choose_storage(&platform);
+        let sqlite = (storage == StorageBackend::Sqlite).then(|| crate::sqlite_host::SqliteHost::new(platform.user_data.join("sqlite/_production")));
+        olaz_core::log::write(format!("main-process storage backend: {}", storage.as_str()));
         Rc::new(Self {
             platform,
             jar,
@@ -97,6 +154,8 @@ impl MainProcess {
             shell: RefCell::new(Rc::new(default_shell)),
             badge: RefCell::new(None),
             trace_workers: std::env::var_os("OLAZ_TRACE_WORKERS").is_some(),
+            storage,
+            sqlite,
         })
     }
 
@@ -188,6 +247,10 @@ impl MainProcess {
 
     /// Keep every account on IndexedDB.
     pub fn normalize_database_adapter_state(&self) {
+        // SQLite backend: the renderer moves every adapter state to SQLite itself (`isMigrateFullDone` is true).
+        if self.storage != StorageBackend::IndexedDb {
+            return;
+        }
         normalize_database_adapter_state(&self.platform);
     }
 
@@ -227,6 +290,18 @@ impl MainProcess {
         }
         self.stop_shared_worker();
         self.shared_worker.reset_session();
+        if let Some(sqlite) = self.sqlite.clone() {
+            spawn(&self.exec, async move { sqlite.close_all().await });
+        }
+    }
+
+    /// Records `backend` for the next launch. The official client then meets empty databases (the account's data is
+    /// not migrated between backends): the caller logs the account out so it starts over.
+    pub fn switch_storage(&self, backend: StorageBackend) {
+        write_storage_choice(&self.platform, backend);
+        let mut store = self.platform.read_store("database-config");
+        store.retain(|k, _| !k.ends_with("adp-st") && !k.to_lowercase().contains("upgraderequired"));
+        let _ = self.platform.write_store("database-config", &store);
     }
 
     pub fn back_to_login(&self) {
@@ -269,18 +344,24 @@ impl MainProcess {
         bridge.handle_now("get-photo-viewer-url", |_| Ok(BV::str("zalo-app://local/popup-viewer.html")));
         bridge.handle_now("get-resource-dir", |_| Ok(BV::str("zalo-app://local/")));
 
-        // Storage selection: force IndexedDB.
-        bridge.handle_now("sqlite-available", |_| Ok(BV::Bool(false)));
+        // Storage selection. SQLite backend: the official "migration fully done" state, so every database adapter is
+        // SQLite and the DAL channel targets the utility process that sqlite-host.js plays. IndexedDB backend: the
+        // official "migration disabled" branch. `fail-load-sqlite3` stays true in both: the legacy message search index
+        // runs in its web worker (the native search binding is not provided).
+        let sqlite_backend = self.storage == StorageBackend::Sqlite;
+        bridge.handle_now("sqlite-available", move |_| Ok(BV::Bool(sqlite_backend)));
         bridge.handle_now("fail-load-sqlite3", |_| Ok(BV::Bool(true)));
-        bridge.handle_now("is-migrate-full-done", |_| Ok(BV::Bool(false)));
+        bridge.handle_now("is-migrate-full-done", move |_| Ok(BV::Bool(sqlite_backend)));
         bridge.handle_now("get-migrate-local-info", |_| Ok(BV::obj([("disable_migrate", BV::Bool(true))])));
         bridge.handle_now("migratedb:check_need_wait_bu", |_| Ok(BV::Bool(false)));
         bridge.handle_now("z-db-corruption-detector", |_| Ok(BV::int(0)));
-        bridge.handle_now("get-name-of-target-script-for-dal-channel-from-host", |_| Ok(BV::str("preload-sqlite")));
+        bridge.handle_now("get-name-of-target-script-for-dal-channel-from-host", move |_| {
+            Ok(BV::str(if sqlite_backend { "utility-process-sqlite" } else { "preload-sqlite" }))
+        });
         let m = me.clone();
         bridge.handle_now("migratedb:signal_restart", move |_| {
             let Some(me) = m.upgrade() else { return Ok(BV::Undefined) };
-            olaz_core::log::write("main-process renderer requested restart for DB migration — reloading on IndexedDB");
+            olaz_core::log::write(format!("main-process renderer requested restart for DB migration — reloading on {}", me.storage.as_str()));
             me.normalize_database_adapter_state();
             if me.has_session() { me.start_shared_worker() } else { me.stop_shared_worker() }
             if let Some(h) = me.host() {
@@ -477,7 +558,7 @@ impl MainProcess {
         let unsupported = |_: Vec<BV>| -> BridgeResult {
             Ok(BV::obj([(
                 "error",
-                BV::obj([("name", BV::str("NotSupported")), ("message", BV::str("Not available in Olaz")), ("code", BV::str("ENOTSUP"))]),
+                BV::obj([("name", BV::str("NotSupported")), ("message", BV::str("Not supported")), ("code", BV::str("ENOTSUP"))]),
             )]))
         };
         bridge.handle_now("exec", unsupported);
@@ -515,7 +596,7 @@ impl MainProcess {
         bridge.handle_now("call-send-to-native", |_| Ok(BV::Undefined));
         bridge.handle_now("call-init", |_| Ok(BV::Undefined));
         bridge.handle_now("request-compressed-log-file", |_| {
-            Ok(BV::obj([("status", BV::int(2)), ("data", BV::obj([("message", BV::str("Not available in Olaz")), ("errorData", BV::Null)]))]))
+            Ok(BV::obj([("status", BV::int(2)), ("data", BV::obj([("message", BV::str("Not supported")), ("errorData", BV::Null)]))]))
         });
     }
 }
@@ -528,7 +609,8 @@ pub fn page_query(platform: &ZaloPlatform, already_login: bool) -> BTreeMap<Stri
     q.insert("app_version".into(), platform.app_version.clone());
     q.insert("about_version".into(), String::new());
     q.insert("new_install".into(), "0".into());
-    // No native sqlite3 in this host: the renderer must use IndexedDB.
+    // No native sqlite3 *module* here (the legacy search index runs in its web worker); the DAL's databases are
+    // served by sqlite-host.js on the SQLite backend.
     q.insert("fail_sqlite3".into(), "true".into());
     q.insert("mode_lang".into(), String::new());
     if already_login {
@@ -637,6 +719,10 @@ pub fn install_bridge(bridge: &Rc<ZaloBridge>, main: &Rc<MainProcess>) {
     bridge.value("$zenv.isRenderer", BV::Bool(true));
 
     main.install(bridge);
+    // Native SQLite behind the official DAL (sqlite-host.js); absent on the IndexedDB backend.
+    if let Some(sqlite) = &main.sqlite {
+        sqlite.install(bridge);
+    }
 
     let p = main.platform.clone();
     bridge.sync("$zelectron.storePath", move |a| Ok(BV::String(p.store_path(&a.string(0).unwrap_or_else(|| "config".into())).to_string_lossy().into_owned())));
@@ -703,7 +789,73 @@ pub fn os_info(platform: &ZaloPlatform) -> BV {
         ("cpus", BV::int(std::thread::available_parallelism().map(|n| n.get() as i64).unwrap_or(1))),
         ("uptime", BV::int(uptime as i64)),
         ("username", BV::String(user)),
+        ("networkInterfaces", BV::String(network_interfaces_json())),
     ])
+}
+
+/// Node's `os.networkInterfaces()` as a JSON array of `[name, [addresses…]]` pairs (an array, not an object: getifaddrs
+/// order must survive the bridge — the official QoS code takes the *first* non-internal IPv4 as the local IP, and Zalo
+/// sends it). Address objects have Node's shape: address, netmask, family, mac, internal, cidr, scopeid (IPv6).
+pub fn network_interfaces_json() -> String {
+    use nix::net::if_::InterfaceFlags;
+    use std::net::IpAddr;
+    let Ok(addrs) = nix::ifaddrs::getifaddrs() else { return "[]".into() };
+    let addrs: Vec<_> = addrs.collect();
+    // Contiguous netmask bits, or None when the mask is not 1…10…0 (Node omits cidr then).
+    fn prefix_len(bytes: &[u8]) -> Option<u32> {
+        let bits: u128 = bytes.iter().fold(0u128, |acc, b| (acc << 8) | *b as u128);
+        let total = bytes.len() as u32 * 8;
+        let ones = bits.count_ones();
+        let mask = if ones == 0 { 0 } else { (!0u128 << (128 - ones)) >> (128 - total) };
+        (bits == mask).then_some(ones)
+    }
+    let mut macs: BTreeMap<String, String> = BTreeMap::new();
+    for a in &addrs {
+        if let Some(link) = a.address.as_ref().and_then(|s| s.as_link_addr()).and_then(|l| l.addr()) {
+            macs.insert(a.interface_name.clone(), link.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"));
+        }
+    }
+    let mut order: Vec<String> = Vec::new();
+    let mut by_name: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for a in &addrs {
+        let Some(sa) = a.address.as_ref() else { continue };
+        let ip: IpAddr = if let Some(v4) = sa.as_sockaddr_in() {
+            IpAddr::V4(v4.ip())
+        } else if let Some(v6) = sa.as_sockaddr_in6() {
+            IpAddr::V6(v6.ip())
+        } else {
+            continue;
+        };
+        let mask: Option<IpAddr> = a.netmask.as_ref().and_then(|m| {
+            m.as_sockaddr_in().map(|v| IpAddr::V4(v.ip())).or_else(|| m.as_sockaddr_in6().map(|v| IpAddr::V6(v.ip())))
+        });
+        let mask_bytes = match mask {
+            Some(IpAddr::V4(m)) => m.octets().to_vec(),
+            Some(IpAddr::V6(m)) => m.octets().to_vec(),
+            None => Vec::new(),
+        };
+        let address = ip.to_string();
+        let family = if ip.is_ipv4() { "IPv4" } else { "IPv6" };
+        let mut entry = serde_json::Map::new();
+        entry.insert("address".into(), Value::String(address.clone()));
+        entry.insert("netmask".into(), Value::String(mask.map(|m| m.to_string()).unwrap_or_default()));
+        entry.insert("family".into(), Value::String(family.into()));
+        entry.insert("mac".into(), Value::String(macs.get(&a.interface_name).cloned().unwrap_or_else(|| "00:00:00:00:00:00".into())));
+        entry.insert("internal".into(), Value::Bool(a.flags.contains(InterfaceFlags::IFF_LOOPBACK)));
+        // Node: IPv6 entries carry the scope as a number (`scopeid`), never inside `address`.
+        if let Some(v6) = sa.as_sockaddr_in6() {
+            entry.insert("scopeid".into(), Value::from(v6.scope_id()));
+        }
+        if let Some(p) = (!mask_bytes.is_empty()).then(|| prefix_len(&mask_bytes)).flatten() {
+            entry.insert("cidr".into(), Value::String(format!("{address}/{p}")));
+        }
+        if !by_name.contains_key(&a.interface_name) {
+            order.push(a.interface_name.clone());
+        }
+        by_name.entry(a.interface_name.clone()).or_default().push(Value::Object(entry));
+    }
+    let pairs: Vec<Value> = order.into_iter().map(|n| { let list = by_name.remove(&n).unwrap_or_default(); Value::Array(vec![Value::String(n), Value::Array(list)]) }).collect();
+    Value::Array(pairs).to_string()
 }
 
 #[cfg(test)]

@@ -119,10 +119,9 @@ impl EmojiPicker {
                     .items_center()
                     .justify_center()
                     .text_size(px(24.0))
-                    
                     .cursor_pointer()
                     .hover(|s| s.bg(theme.hover()))
-                    .child(e)
+                    .child(crate::richtext::emoji_text(&e, theme.label()))
                     .on_click(cx.listener(move |this, _, _, cx| this.pick(&pick, cx))),
             );
         }

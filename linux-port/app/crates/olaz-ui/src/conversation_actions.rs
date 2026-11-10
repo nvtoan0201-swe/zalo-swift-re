@@ -69,8 +69,14 @@ pub fn conversation_menu(menu: PopupMenu, id: &str, preset: MenuPreset, window: 
         }
         None => {}
     }
+    if plan.can_delete || plan.can_leave {
+        menu = menu.separator();
+    }
     if plan.can_delete {
-        menu = menu.separator().item(item("Xóa hội thoại", |e, id| e.request_delete_conversation(id)));
+        menu = menu.item(item("Xóa hội thoại", |e, id| e.request_delete_conversation(id)));
+    }
+    if plan.can_leave {
+        menu = menu.item(item("Rời nhóm", |e, id| e.request_leave_group(id)));
     }
     menu
 }
@@ -574,6 +580,16 @@ impl PromptHost {
                     }
                 },
             ));
+        }
+        if let ConversationPrompt::LeaveGroup { id, owner } = prompt {
+            use olaz_engine::conversation_actions::{DELETE_CANCEL, LEAVE_CONFIRM, LEAVE_MESSAGE, LEAVE_OWNER_MESSAGE, LEAVE_TITLE};
+            return Some(alert(LEAVE_TITLE, if owner { LEAVE_OWNER_MESSAGE } else { LEAVE_MESSAGE }, LEAVE_CONFIRM, DELETE_CANCEL, true, theme, move |ok, cx| {
+                let e = engine(cx);
+                e.set_conversation_prompt(None);
+                if ok {
+                    e.confirm_leave_group(&id);
+                }
+            }));
         }
         let _ = cx;
         let sheet: AnyElement = match (&self.pin_board, &self.hidden, &self.labels) {

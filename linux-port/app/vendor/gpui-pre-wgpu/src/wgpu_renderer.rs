@@ -445,6 +445,15 @@ impl WgpuRenderer {
         } else {
             opaque_alpha_mode
         };
+        // Olaz patch: rounded window corners need a transparent surface; log what this adapter offers.
+        log::info!(
+            "surface on {:?} ({:?}): alpha modes {:?}, transparent {} → {:?}",
+            adapter.get_info().name,
+            adapter.get_info().backend,
+            surface_caps.alpha_modes,
+            config.transparent,
+            alpha_mode
+        );
 
         let max_texture_size = device.limits().max_texture_dimension_2d;
 

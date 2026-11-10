@@ -1,7 +1,7 @@
 // EXTRACTED VERBATIM from Sources/Olaz/ZaloRuntime/OfficialClientHost.swift (AsarSchemeHandler.workerPreludeBase; /*DEBUG_EVAL*/ is replaced by dal-worker-debug-eval.js in debug builds only) — do not edit here; re-run tools/sync-from-macos.sh
 (() => {
-  const fwd = (k, v) => { try { self.postMessage({ __olazLog: k + ' ' + String(v).slice(0, 300) }); } catch {} };
-  self.__olazFwd = fwd;
+  const fwd = (k, v) => { try { self.postMessage({ __zhostLog: k + ' ' + String(v).slice(0, 300) }); } catch {} };
+  self.__zhostFwd = fwd;
   /*DEBUG_EVAL*/
   const errText = (e) => e ? (e.name || '') + ': ' + (e.message || e) : String(e);
   self.addEventListener('error', (e) => fwd('error', e.message));

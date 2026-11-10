@@ -73,7 +73,7 @@ pub fn encode_multipart(parts: &[Part], boundary: &str) -> Vec<u8> {
 }
 
 pub fn new_boundary() -> String {
-    format!("----OlazFormBoundary{}", uuid::Uuid::new_v4().simple().to_string().to_uppercase())
+    olaz_core::fingerprint::chromium_form_boundary()
 }
 
 /// A request description from `znet` (`op: "http"`).
@@ -147,6 +147,16 @@ pub fn build_request(body: &Map<String, Value>) -> Result<HttpRequest, String> {
                 set(&mut headers, "Content-Type", format!("multipart/form-data; boundary={boundary}"));
             }
             _ => {}
+        }
+    }
+    // Chromium 108's own request headers (client hints, sec-fetch, its Accept-Language / Accept-Encoding), which reqwest
+    // would not send or would format differently; only names the page did not set.
+    if !has(&headers, "User-Agent") {
+        headers.push(("User-Agent".to_string(), olaz_core::fingerprint::user_agent()));
+    }
+    for (name, value) in olaz_core::fingerprint::client_headers(olaz_core::fingerprint::Flavour::Api) {
+        if !has(&headers, name) {
+            headers.push((name.to_string(), value));
         }
     }
     let timeout_ms = body.get("timeout").and_then(Value::as_f64).unwrap_or(0.0);
@@ -232,6 +242,50 @@ pub async fn perform(client: reqwest::Client, req: HttpRequest) -> Result<HttpOu
     }
     let body = response.bytes().await.map_err(fail)?.to_vec();
     Ok(HttpOutcome { status, headers, final_url, body })
+}
+
+/// The fingerprint helper first (Chromium 108's TLS + HTTP/2 instead of rustls'); reqwest only when the helper cannot
+/// serve the request. Cookies: attached from (and Set-Cookie harvested into) the shared jar, which reqwest's cookie
+/// provider does on the other path.
+pub async fn perform_fingerprinted(client: reqwest::Client, jar: Arc<CookieJar>, req: HttpRequest) -> Result<HttpOutcome, HttpFailure> {
+    let proxy = crate::fingerprint::shared();
+    if proxy.ready(Duration::from_secs(3)).await {
+        let mut fp = crate::fingerprint::Request::get(req.url.as_str());
+        fp.method = req.method.clone();
+        fp.body = req.body.clone();
+        fp.timeout_ms = if req.timeout_ms > 0.0 && req.timeout_ms < 600_000.0 { req.timeout_ms as u64 } else { 60_000 };
+        // Chromium order: the page's headers, then the browser's defaults (both from `build_request`), then cookies.
+        fp.headers = req.headers.clone();
+        if let Some(cookie) = jar.header_for(&req.url) {
+            fp.headers.push(("Cookie".into(), cookie));
+        }
+        match proxy.perform(&fp).await {
+            Ok((head, body)) => {
+                jar.store_response(&req.url, head.headers.iter().filter(|(n, _)| n.eq_ignore_ascii_case("set-cookie")).map(|(_, v)| v.clone()));
+                let mut headers = Map::new();
+                for (k, v) in &head.headers {
+                    let key = k.to_lowercase();
+                    match headers.get_mut(&key) {
+                        Some(Value::String(existing)) => {
+                            existing.push_str(", ");
+                            existing.push_str(v);
+                        }
+                        _ => {
+                            headers.insert(key, Value::String(v.clone()));
+                        }
+                    }
+                }
+                let final_url = if head.url.is_empty() { req.url.to_string() } else { head.url };
+                return Ok(HttpOutcome { status: head.status, headers, final_url, body });
+            }
+            Err(e) if e.falls_back() => olaz_core::log::write(format!("fingerprint: {e} — this request uses the built-in stack")),
+            Err(e) => {
+                let timed_out = e.is_timeout();
+                return Err(HttpFailure { message: e.to_string(), timed_out, code: if timed_out { 1001 } else { 1 } });
+            }
+        }
+    }
+    perform(client, req).await
 }
 
 fn error_chain(e: &dyn std::error::Error) -> String {
@@ -374,7 +428,7 @@ impl NetworkProxy {
         };
         let (method, url) = (req.method.clone(), req.url.clone());
         let client = self.client.clone();
-        let result = runtime().spawn(perform(client, req)).await;
+        let result = runtime().spawn(perform_fingerprinted(client, self.jar.clone(), req)).await;
         match result {
             Ok(Ok(out)) => {
                 let completed = self.on_request_completed.borrow().clone();
@@ -562,6 +616,16 @@ async fn socket_task(
     let ev = |e: SocketEvent| {
         let _ = events.unbounded_send((id, generation, e));
     };
+    // The fingerprint helper first (Chrome's ClientHello on the wss handshake); tungstenite only when it is unavailable.
+    if crate::fingerprint::shared().ready(Duration::from_secs(3)).await {
+        let mut headers = vec![("User-Agent".to_string(), ua.clone()), ("Origin".to_string(), WEBSOCKET_ORIGIN.to_string())];
+        if let Some(c) = &cookie {
+            headers.push(("Cookie".to_string(), c.clone()));
+        }
+        if helper_socket(url.as_str(), &headers, &protocols, &mut cmds, &ev).await {
+            return;
+        }
+    }
     let mut request = match url.as_str().into_client_request() {
         Ok(r) => r,
         Err(e) => return ev(SocketEvent::Failed(None, String::new(), e.to_string())),
@@ -634,6 +698,81 @@ async fn socket_task(
     }
 }
 
+/// One websocket through the fingerprint helper. `false`: the helper could not open it (fall back to tungstenite).
+async fn helper_socket(
+    url: &str,
+    headers: &[(String, String)],
+    protocols: &[String],
+    cmds: &mut tokio::sync::mpsc::UnboundedReceiver<SocketCmd>,
+    ev: &impl Fn(SocketEvent),
+) -> bool {
+    use crate::fingerprint::WsEvent;
+    let open = crate::fingerprint::shared().ws_open(url, headers, protocols);
+    let (session, protocol, mut events) = tokio::select! {
+        r = open => match r {
+            Ok(ok) => ok,
+            Err(e) if e.falls_back() => {
+                olaz_core::log::write(format!("fingerprint: {e} — websocket uses the built-in stack"));
+                return false;
+            }
+            Err(e) => {
+                ev(SocketEvent::Failed(None, String::new(), e.to_string()));
+                return true;
+            }
+        },
+        cmd = cmds.recv() => {
+            // Closed (or dropped) before the handshake: nothing reaches the page (the client already got `close`).
+            let _ = cmd;
+            return true;
+        }
+    };
+    ev(SocketEvent::Open(protocol));
+    loop {
+        tokio::select! {
+            cmd = cmds.recv() => match cmd {
+                Some(SocketCmd::Text(t)) => {
+                    if let Err(e) = session.send_text(&t) {
+                        ev(SocketEvent::Failed(None, String::new(), e.to_string()));
+                        return true;
+                    }
+                }
+                Some(SocketCmd::Binary(b)) => {
+                    if let Err(e) = session.send_binary(&b) {
+                        ev(SocketEvent::Failed(None, String::new(), e.to_string()));
+                        return true;
+                    }
+                }
+                Some(SocketCmd::Close(code, _)) => {
+                    session.close(code);
+                    return true;
+                }
+                None => return true,
+            },
+            event = events.recv() => match event {
+                Some(WsEvent::Text(t)) => ev(SocketEvent::Text(t)),
+                Some(WsEvent::Binary(b)) => ev(SocketEvent::Binary(b)),
+                // 1006: no close frame (the helper's reading of a broken connection).
+                Some(WsEvent::Closed(1006, reason)) => {
+                    ev(SocketEvent::Failed(None, reason, "connection closed".into()));
+                    return true;
+                }
+                Some(WsEvent::Closed(code, reason)) => {
+                    ev(SocketEvent::ServerClosed(code, reason));
+                    return true;
+                }
+                Some(WsEvent::Error(m)) => {
+                    ev(SocketEvent::Failed(None, String::new(), m));
+                    return true;
+                }
+                None => {
+                    ev(SocketEvent::Failed(None, String::new(), "helper exited".into()));
+                    return true;
+                }
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,7 +787,7 @@ mod tests {
         let expected = b"--B\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--B\r\nContent-Disposition: form-data; name=\"f\"; filename=\"x.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n\x00\x01\r\n--B--\r\n";
         assert_eq!(out, expected.to_vec());
         let b = new_boundary();
-        assert!(b.starts_with("----OlazFormBoundary") && b.len() == 20 + 32);
+        assert!(b.starts_with("----WebKitFormBoundary") && b.len() == 22 + 16);
     }
 
     #[test]
@@ -656,14 +795,18 @@ mod tests {
         let body = json!({"url": "https://x.zalo.me/a?b=1", "headers": {"content-type": "app/json"}, "body": {"kind": "text", "text": "hi", "contentType": "text/x"}});
         let r = build_request(body.as_object().unwrap()).unwrap();
         assert_eq!(r.method, "GET");
-        assert_eq!(r.headers, vec![("content-type".to_string(), "app/json".to_string())]);
+        assert_eq!(r.headers[0], ("content-type".to_string(), "app/json".to_string()));
+        // Chromium's request headers follow the page's own; no Origin / Referer.
+        let names: Vec<&str> = r.headers.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"sec-ch-ua") && names.contains(&"sec-fetch-mode") && names.contains(&"accept-encoding"));
+        assert!(!names.iter().any(|n| n.eq_ignore_ascii_case("origin") || n.eq_ignore_ascii_case("referer")));
         assert_eq!(r.body.as_deref(), Some(&b"hi"[..]));
         let body = json!({"url": "https://x/", "body": {"kind": "text", "text": "hi"}});
         let r = build_request(body.as_object().unwrap()).unwrap();
-        assert_eq!(r.headers, vec![("Content-Type".to_string(), "text/plain;charset=UTF-8".to_string())]);
+        assert_eq!(r.headers[0], ("Content-Type".to_string(), "text/plain;charset=UTF-8".to_string()));
         let body = json!({"url": "https://x/", "headers": {"Content-Type": "x"}, "body": {"kind": "formdata", "parts": [{"name": "n", "value": "v"}]}});
         let r = build_request(body.as_object().unwrap()).unwrap();
-        assert!(r.headers[0].1.starts_with("multipart/form-data; boundary=----OlazFormBoundary"));
+        assert!(r.headers[0].1.starts_with("multipart/form-data; boundary=----WebKitFormBoundary"));
         assert_eq!(build_request(json!({"url": "::"}).as_object().unwrap()).unwrap_err(), "bad url");
     }
 

@@ -1,7 +1,7 @@
 //! Settings window (port of SettingsWindow.swift): Chung, Giao diện, Thông báo, Quyền riêng tư (hidden-chat PIN), Sticker, Tài khoản.
 
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    AnyElement, App, AppContext, Bounds, ClickEvent, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions, div, prelude::FluentBuilder, px,
     size,
 };
@@ -38,13 +38,15 @@ pub struct SettingsView {
     pin_sheet: Option<Entity<HiddenChatSheet>>,
     sticker_busy: bool,
     sticker_failed: bool,
+    /// Engine ▸ "Chuyển sang SQLite…" asks before logging out.
+    confirm_sqlite: bool,
     /// `--ui-render` panel scenes: only the tab's form, without tabs and window chrome.
     form_only: bool,
 }
 
 impl SettingsView {
     pub fn new(tab: Tab, form_only: bool) -> Self {
-        SettingsView { tab, pin_sheet: None, sticker_busy: false, sticker_failed: false, form_only }
+        SettingsView { tab, pin_sheet: None, sticker_busy: false, sticker_failed: false, confirm_sqlite: false, form_only }
     }
 }
 
@@ -402,6 +404,39 @@ impl SettingsView {
         let sub = profile.as_ref().and_then(|p| p.phone.clone()).filter(|p| !p.is_empty()).unwrap_or_else(|| "Tài khoản Zalo".into());
         let av = avatar(profile.as_ref().and_then(|p| p.avatar.as_deref()), &name, 52.0, cx);
         let signed_in = profile.is_some();
+        use olaz_engine::engine::StorageBackend;
+        let storage = e.storage_backend();
+        let storage_text = match storage {
+            Some(StorageBackend::Sqlite) => "SQLite (gốc)",
+            Some(StorageBackend::IndexedDb) => "IndexedDB (WebKit)",
+            None => "—",
+        };
+        let me = cx.entity().downgrade();
+        let ask = {
+            let me = me.clone();
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                let _ = me.update(cx, |this, cx| {
+                    this.confirm_sqlite = true;
+                    cx.notify();
+                });
+            }
+        };
+        let cancel = {
+            let me = me.clone();
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                let _ = me.update(cx, |this, cx| {
+                    this.confirm_sqlite = false;
+                    cx.notify();
+                });
+            }
+        };
+        let confirm = move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+            let _ = me.update(cx, |this, cx| {
+                this.confirm_sqlite = false;
+                cx.notify();
+            });
+            engine(cx).switch_to_sqlite();
+        };
         div()
             .flex()
             .flex_col()
@@ -420,7 +455,33 @@ impl SettingsView {
             .child(
                 group(theme)
                     .child(row("Giao thức", None, div().text_size(px(13.0)).text_color(theme.secondary()).child(format!("Zalo PC {} (mã chính thức)", client.unwrap_or_else(|| "—".into()))).into_any_element(), theme))
-                    .child(row("Hội thoại", None, div().text_size(px(13.0)).text_color(theme.secondary()).child(count).into_any_element(), theme)),
+                    .child(row("Hội thoại", None, div().text_size(px(13.0)).text_color(theme.secondary()).child(count).into_any_element(), theme))
+                    .child(row("Lưu trữ", None, div().text_size(px(13.0)).text_color(theme.secondary()).child(storage_text).into_any_element(), theme))
+                    .when(storage == Some(StorageBackend::IndexedDb) && !self.confirm_sqlite, |el| {
+                        el.child(row("", None, button("acc-sqlite", "Chuyển sang SQLite…", ButtonStyle::Glass, false, theme, ask).into_any_element(), theme))
+                    })
+                    .when(storage == Some(StorageBackend::IndexedDb) && self.confirm_sqlite, |el| {
+                        el.child(
+                            div()
+                                .px(px(14.0))
+                                .py(px(9.0))
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.0))
+                                .child(div().text_size(px(13.0)).font_weight(FontWeight::SEMIBOLD).child("Chuyển sang SQLite?"))
+                                .child(div().text_size(px(11.5)).text_color(theme.secondary()).child(
+                                    "Tin nhắn đã lưu trên máy sẽ không được chuyển: sau khi đăng nhập lại, hãy đồng bộ tin nhắn từ điện thoại. SQLite nhanh hơn nhiều với tài khoản có nhiều tin nhắn.",
+                                ))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_end()
+                                        .gap(px(8.0))
+                                        .child(button("acc-sqlite-cancel", "Hủy", ButtonStyle::Glass, false, theme, cancel))
+                                        .child(button("acc-sqlite-go", "Đăng xuất và chuyển", ButtonStyle::Destructive, false, theme, confirm)),
+                                ),
+                        )
+                    }),
             )
             .child(div().pt(px(16.0)).child(button("acc-logout", "Đăng xuất", ButtonStyle::Destructive, !signed_in, theme, |_, _, cx| engine(cx).log_out())))
             .into_any_element()

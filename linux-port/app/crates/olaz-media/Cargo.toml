@@ -8,10 +8,11 @@ license.workspace = true
 olaz-core.workspace = true
 olaz-host = { path = "../olaz-host" }
 futures = "0.3"
+bytes = "1"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync", "time"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream", "gzip"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream", "gzip", "brotli", "deflate"] }
 
 olaz-main = { path = "../olaz-main" }
 serde_json.workspace = true

@@ -629,6 +629,10 @@
    "icon": "shield",
    "weight": "regular"
   },
+  "sidebar.left": {
+   "icon": "sidebar-simple",
+   "weight": "regular"
+  },
   "sidebar.right": {
    "icon": "sidebar-simple",
    "weight": "regular",

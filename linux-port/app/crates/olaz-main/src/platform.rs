@@ -20,7 +20,7 @@ impl ZaloPlatform {
         Self {
             app_version: app_version.to_string(),
             client_type: olaz_core::CLIENT_TYPE.into(),
-            client_version: olaz_core::CLIENT_VERSION.into(),
+            client_version: olaz_core::fingerprint::client_version(),
             paths,
             user_data,
         }

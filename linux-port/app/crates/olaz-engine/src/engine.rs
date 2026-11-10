@@ -3,7 +3,7 @@
 //! Port of `ZaloEngine.swift`; feature modules live in sibling files (`chat.rs`, `conversations.rs`…).
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
@@ -17,6 +17,8 @@ use olaz_main::secrets::SecretStore;
 use olaz_main::{MainEvent, MainProcess, ZaloPlatform};
 use olaz_runtime::{Installer, Layout, Step};
 use serde_json::{Map, Value};
+
+pub use olaz_main::main_process::StorageBackend;
 
 use crate::conversations::ConversationExtras;
 use crate::models::{ChatMessage, FailedDraftStore, J};
@@ -136,6 +138,29 @@ pub fn list_order(a: &ConversationSummary, b: &ConversationSummary) -> std::cmp:
         return db.partial_cmp(&da).unwrap_or(Ordering::Equal);
     }
     crate::collate::compare(&a.display_name(), &b.display_name())
+}
+
+/// The conversation list arrives as deltas (state-adapter.js): `conversations` holds the rows that changed since the last
+/// post, `removed` the ids that left the official index, `reset` (or the legacy full-list shape without `removed`) replaces
+/// the whole list. A large account has thousands of rows and some preview changes every tick: merging by id keeps the
+/// bridge payload proportional to what changed. `None`: the list is unchanged.
+pub fn merge_conversations(current: &[ConversationSummary], state: &Map<String, Value>) -> Option<Vec<ConversationSummary>> {
+    let rows: Vec<ConversationSummary> = state
+        .get("conversations")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(ConversationSummary::from_json).collect())
+        .unwrap_or_default();
+    let reset = state.get("reset").and_then(Value::as_bool).unwrap_or(!state.contains_key("removed"));
+    let removed: HashSet<&str> = state.get("removed").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    let mut index: HashMap<String, ConversationSummary> =
+        if reset { HashMap::new() } else { current.iter().filter(|c| !removed.contains(c.id.as_str())).map(|c| (c.id.clone(), c.clone())).collect() };
+    for row in rows {
+        index.insert(row.id.clone(), row);
+    }
+    let mut sorted: Vec<ConversationSummary> = index.into_values().collect();
+    // Map order is arbitrary: ties of `list_order` fall back to the id so rows never swap between ticks.
+    sorted.sort_by(|a, b| list_order(a, b).then_with(|| a.id.cmp(&b.id)));
+    (sorted != current).then_some(sorted)
 }
 
 /// What changed (views re-render on any change; the kind lets them skip unrelated work).
@@ -414,7 +439,19 @@ impl ZaloEngine {
     }
 
     fn boot(self: &Rc<Self>, app_dir: &std::path::Path, version: &str) {
+        // Chromium-fingerprint network stack: ready before the renderer's first requests.
+        olaz_host::fingerprint::shared().warm_up();
         self.state.borrow_mut().client_version = Some(version.to_string());
+        // Everything that talks to Zalo (User-Agent, page query, media fetches) reports the runtime's own API version,
+        // exactly as the official main process of that build would.
+        let asar_path = app_dir.join("Contents/Resources/app.asar");
+        let api_version = olaz_core::asar::AsarArchive::open(&asar_path)
+            .ok()
+            .and_then(|a| a.read("main-dist/main.js").and_then(|js| olaz_core::fingerprint::client_version_from_main_js(&js)));
+        match api_version {
+            Some(v) => olaz_core::fingerprint::set_client_version(&v),
+            None => olaz_core::log::write("runtime: getClientVersion not found in main.js, keeping the pinned value"),
+        }
         let config = WebHostConfig {
             binary: self.services.webhost_binary.clone(),
             asar: app_dir.join("Contents/Resources/app.asar"),
@@ -480,7 +517,7 @@ impl ZaloEngine {
             }
         }));
         *host.bridge.trace.borrow_mut() = Some(Rc::new(|key: &str, args: &[olaz_core::BV]| {
-            if !key.contains("ZLog") && !key.starts_with("$zelectron.store") {
+            if !key.contains("ZLog") && !key.starts_with("$zelectron.store") && !key.starts_with("$znode.sqliteHost") {
                 olaz_core::log::write(format!("bridge {key}{}", olaz_core::log::shape(args)));
             }
         }));
@@ -513,6 +550,20 @@ impl ZaloEngine {
     }
 
     /// Clears the session cookies and local client data, then shows a fresh QR.
+    /// Where the official client keeps its databases (Settings ▸ Engine).
+    pub fn storage_backend(&self) -> Option<olaz_main::main_process::StorageBackend> {
+        self.main_process().map(|m| m.storage)
+    }
+
+    /// Moves this install to the native SQLite backend: the account is logged out and starts over on SQLite at the next
+    /// launch (history comes back with the phone → PC sync).
+    pub fn switch_to_sqlite(&self) {
+        if let Some(main) = self.main_process() {
+            main.switch_storage(olaz_main::main_process::StorageBackend::Sqlite);
+        }
+        self.log_out();
+    }
+
     pub fn log_out(&self) {
         if let Some(main) = self.main_process() {
             main.jar.clear_zalo();
@@ -638,13 +689,8 @@ impl ZaloEngine {
                 if state.contains_key("chat") || state.contains_key("typing") {
                     self.handle_chat(&state);
                 } else if state.contains_key("conversations") {
-                    let mut rows: Vec<ConversationSummary> = state
-                        .get("conversations")
-                        .and_then(Value::as_array)
-                        .map(|a| a.iter().filter_map(ConversationSummary::from_json).collect())
-                        .unwrap_or_default();
-                    rows.sort_by(list_order);
-                    if self.state.borrow().conversations != rows {
+                    let merged = merge_conversations(&self.state.borrow().conversations, &state);
+                    if let Some(rows) = merged {
                         self.state.borrow_mut().conversations = rows;
                         self.changed(Change::Conversations);
                     }
@@ -679,8 +725,14 @@ impl ZaloEngine {
             return;
         }
         if let Some(png) = state.get("qr").and_then(Value::as_str).and_then(decode_data_url) {
+            let event = state.get("event").and_then(Value::as_str);
+            // Before the first QR the page's `<img>` holds its loading icon (a small SVG): not a QR. The QRs the page
+            // draws itself as SVG (trusted-device mode) arrive with their `qr` / `qr2` event first.
+            if login.step == LoginStep::Generating && event.is_none() && png.trim_ascii_start().starts_with(b"<") {
+                return;
+            }
             login.qr_png = Some(png);
-            match state.get("event").and_then(Value::as_str) {
+            match event {
                 Some("qr") => {
                     login.step = LoginStep::WaitingScan;
                     login.is_second_qr = false;
@@ -812,7 +864,7 @@ fn configure_worker_logging(worker: &Rc<ClientHost>) {
         }
     }));
     *worker.bridge.trace.borrow_mut() = Some(Rc::new(|key: &str, args: &[olaz_core::BV]| {
-        if !key.contains("ZLog") && !key.starts_with("$zelectron.store") {
+        if !key.contains("ZLog") && !key.starts_with("$zelectron.store") && !key.starts_with("$znode.sqliteHost") {
             olaz_core::log::write(format!("sw-bridge {key}{}", olaz_core::log::shape(args)));
         }
     }));
@@ -830,11 +882,61 @@ fn configure_worker_logging(worker: &Rc<ClientHost>) {
     }));
 }
 
-/// `data:<mime>;base64,<payload>` → bytes.
+/// The QR `<img>` source as image bytes. The server's QR is `data:image/png;base64,…`, but the official renderer draws
+/// the self-generated / trusted-device QRs (`genSecondQR`, and `genFirstQR` in that mode) itself as
+/// `data:image/svg+xml;utf8,<percent-encoded SVG>`.
 pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
     if !url.starts_with("data:") {
         return None;
     }
     let comma = url.find(',')?;
-    base64::engine::general_purpose::STANDARD.decode(&url[comma + 1..]).ok()
+    let (header, payload) = (&url[..comma], &url[comma + 1..]);
+    if header.ends_with(";base64") {
+        return base64::engine::general_purpose::STANDARD.decode(payload).ok();
+    }
+    Some(percent_encoding::percent_decode_str(payload).collect())
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_conversations;
+    use serde_json::{Value, json};
+
+    fn ids(v: &[super::ConversationSummary]) -> Vec<&str> {
+        v.iter().map(|c| c.id.as_str()).collect()
+    }
+    fn row(id: &str, ts: f64) -> Value {
+        json!({"id": id, "name": id, "preview": {"text": "x", "ts": ts}})
+    }
+    fn st(v: Value) -> serde_json::Map<String, Value> {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn merges_deltas_by_id() {
+        let a = merge_conversations(&[], &st(json!({"conversations": [row("a", 1.0), row("b", 2.0)], "removed": [], "reset": true}))).unwrap();
+        assert_eq!(ids(&a), ["b", "a"]);
+        // Only `a` changed: `b` stays.
+        let b = merge_conversations(&a, &st(json!({"conversations": [row("a", 3.0)], "removed": [], "reset": false}))).unwrap();
+        assert_eq!(ids(&b), ["a", "b"]);
+        let c = merge_conversations(&b, &st(json!({"conversations": [], "removed": ["a"], "reset": false}))).unwrap();
+        assert_eq!(ids(&c), ["b"]);
+        assert!(merge_conversations(&c, &st(json!({"conversations": [row("b", 2.0)], "removed": [], "reset": false}))).is_none());
+        // Reset replaces everything; the legacy full-list shape (no `removed`) does too.
+        assert_eq!(ids(&merge_conversations(&b, &st(json!({"conversations": [row("z", 1.0)], "removed": [], "reset": true}))).unwrap()), ["z"]);
+        assert_eq!(ids(&merge_conversations(&b, &st(json!({"conversations": [row("y", 1.0)]}))).unwrap()), ["y"]);
+    }
+}
+
+#[cfg(test)]
+mod data_url_tests {
+    use super::decode_data_url;
+
+    #[test]
+    fn decodes_base64_and_percent_encoded() {
+        assert_eq!(decode_data_url("data:image/png;base64,iVBO"), Some(vec![0x89, 0x50, 0x4e]));
+        assert_eq!(decode_data_url("data:image/svg+xml;utf8,%3Csvg%20a='1'%3E%3C/svg%3E").as_deref(), Some(&b"<svg a='1'></svg>"[..]));
+        assert_eq!(decode_data_url("data:image/svg+xml,<svg/>").as_deref(), Some(&b"<svg/>"[..]));
+        assert_eq!(decode_data_url("https://x/qr.png"), None);
+    }
 }

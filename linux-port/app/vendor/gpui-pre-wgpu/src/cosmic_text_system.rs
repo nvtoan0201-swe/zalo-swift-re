@@ -433,9 +433,12 @@ impl CosmicTextSystemState {
             // and emoji fonts often have no Latin glyphs, and they are exactly
             // what cosmic-text falls back to when the primary font lacks a
             // glyph.
+            // Olaz patch: the color emoji font may be primary for emoji runs (else a primary text font that has
+            // its own monochrome glyph, like Inter's ❤, wins over it). It is never used for the editor.
             if font.as_swash().charmap().map('m') == 0
                 && !self.loading_fallback
                 && !allowed_bad_font_names.contains(&postscript_name.as_str())
+                && !check_is_known_emoji_font(&postscript_name)
             {
                 continue;
             };

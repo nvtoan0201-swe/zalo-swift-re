@@ -6,6 +6,7 @@ pub mod fs;
 pub mod main_process;
 pub mod platform;
 pub mod secrets;
+pub mod sqlite_host;
 pub mod worker_router;
 
 pub use main_process::{BridgeModule, MainEvent, MainProcess, install_bridge, page_query};

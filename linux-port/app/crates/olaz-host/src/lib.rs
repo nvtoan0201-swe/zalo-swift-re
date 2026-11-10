@@ -1,6 +1,7 @@
 //! App side of the official renderer: webhost process + views, `$z*` bridge, network proxy.
 
 pub mod bridge;
+pub mod fingerprint;
 pub mod host;
 pub mod net;
 

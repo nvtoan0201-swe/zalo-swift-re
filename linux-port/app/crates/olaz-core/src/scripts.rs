@@ -15,6 +15,7 @@ pub const BRIDGE_TABLE_JSON: &str = include_str!("../../../../shared/resources/b
 pub const AFTER_SPEC: &[(&str, &str)] = &[
     ("local-modules", shared!("local-modules.js")),
     ("bridge", shared!("bridge.js")),
+    ("sqlite-host", shared!("sqlite-host.js")),
     ("state-adapter", shared!("state-adapter.js")),
     ("chat-adapter", shared!("chat-adapter.js")),
     ("media-store-adapter", shared!("media-store-adapter.js")),
@@ -31,6 +32,8 @@ pub const AFTER_SPEC: &[(&str, &str)] = &[
     ("zcloud-adapter", shared!("zcloud-adapter.js")),
     ("poll-adapter", shared!("poll-adapter.js")),
     ("call-adapter", shared!("call-adapter.js")),
+    // Linux-only.
+    ("group-leave-adapter", shared!("linux/group-leave-adapter.js")),
 ];
 
 pub const NETWORK_SHIM: &str = shared!("network-shim.js");
@@ -49,7 +52,9 @@ pub fn shared_script(text: &str) -> &str {
 }
 
 fn host_script(name: &str, source: &str) -> String {
-    format!("{source}\n//# sourceURL=olaz-{name}.js")
+    // Release: no sourceURL. The renderer's error stacks (which its log collector can upload) must not name third-party
+    // scripts; without it our frames show up anonymous.
+    if cfg!(debug_assertions) { format!("{source}\n//# sourceURL=olaz-{name}.js") } else { source.to_string() }
 }
 
 /// All user scripts for one window, in the exact order the macOS host injects them.
@@ -85,14 +90,17 @@ pub(crate) mod tests {
     #[test]
     fn order_matches_h03() {
         let scripts = injection_order("window.__zaloBridgeSpec = {};", false);
-        assert_eq!(scripts.len(), 22);
+        assert_eq!(scripts.len(), 24);
         assert_eq!(scripts[0], "");
         assert!(scripts[1].starts_with("(() => {\n  const post = (lvl, a)"));
         assert!(scripts[2].contains("window.__zaloNet") && scripts[2].ends_with("//# sourceURL=olaz-network-shim.js"));
         assert_eq!(scripts[3], "window.__zaloBridgeSpec = {};");
         assert!(scripts[4].ends_with("//# sourceURL=olaz-local-modules.js"));
         assert!(scripts[5].ends_with("//# sourceURL=olaz-bridge.js"));
-        assert!(scripts[21].ends_with("//# sourceURL=olaz-call-adapter.js"));
+        assert!(scripts[6].ends_with("//# sourceURL=olaz-sqlite-host.js"));
+        assert!(scripts[22].ends_with("//# sourceURL=olaz-call-adapter.js"));
+        // Linux-only adapters come after the macOS ones.
+        assert!(scripts[23].ends_with("//# sourceURL=olaz-group-leave-adapter.js"));
         assert_eq!(injection_order("", true)[0], "window.__zaloTraceWorkers = true;");
     }
 

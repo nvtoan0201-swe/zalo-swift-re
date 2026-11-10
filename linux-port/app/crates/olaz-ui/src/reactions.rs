@@ -30,7 +30,7 @@ pub fn reaction_icon(icon: &ReactionIcon, size: f32, cx: &App) -> AnyElement {
         .flatten();
     match image {
         Some(i) => img(i).size(px(size)).into_any_element(),
-        None => div().text_size(px(size * 0.85)).child(icon.emoji.clone()).into_any_element(),
+        None => div().text_size(px(size * 0.85)).child(crate::richtext::emoji_text(&icon.emoji, Theme::get(cx).label())).into_any_element(),
     }
 }
 

@@ -233,6 +233,18 @@ pub fn request_switcher(cx: &mut App) {
     });
 }
 
+/// Ctrl+Alt+S or the list header button: hides / shows the sidebar column of every shell.
+pub fn toggle_sidebar(cx: &mut App) {
+    SHELLS.with(|s| {
+        for w in s.borrow().iter() {
+            let _ = w.update(cx, |shell, cx| {
+                shell.show_sidebar = !shell.show_sidebar;
+                cx.notify();
+            });
+        }
+    });
+}
+
 /// `--ui-render`: the fixture's `shell` block plus the scene's switcher / inspector, applied on the next render.
 pub fn apply_render_state(shell: &serde_json::Map<String, serde_json::Value>, inspector: bool, switcher: bool, cx: &mut App) {
     let destination = match shell.get("destination").and_then(|v| v.as_str()) {
@@ -646,11 +658,36 @@ impl ShellView {
             .h(px(TITLEBAR_HEIGHT))
             .flex_none()
             .flex()
-            .flex_col()
-            .justify_center()
+            .items_center()
+            .gap(px(8.0))
             .px(px(16.0))
-            .child(div().text_size(px(15.0)).font_weight(FontWeight::BOLD).child(self.destination.title()))
-            .child(div().text_size(px(11.0)).text_color(theme.secondary()).child(subtitle));
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .child(div().truncate().text_size(px(15.0)).font_weight(FontWeight::BOLD).child(self.destination.title()))
+                    .child(div().truncate().text_size(px(11.0)).text_color(theme.secondary()).child(subtitle)),
+            )
+            .child(
+                div()
+                    .id("toggle-sidebar")
+                    .flex_none()
+                    .size(px(28.0))
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .hover(|s| s.bg(theme.hover()))
+                    .child(icon("sidebar.left", 16.0, if self.show_sidebar { theme.secondary() } else { theme.accent }))
+                    .tooltip(|window, cx| {
+                        gpui_component::tooltip::Tooltip::new("Ẩn / hiện thanh bên").action(&crate::keymap::ToggleSidebar, None).build(window, cx)
+                    })
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(|_, _, cx| toggle_sidebar(cx)),
+            );
         let search = div()
             .px(px(12.0))
             .pb(px(8.0))
@@ -1125,8 +1162,9 @@ impl Render for ShellView {
             && self.chat.is_some()
             && self.destination.is_conversation_list()
             && window.viewport_size().width < px(1320.0);
-        let sidebar = if self.show_sidebar && !cramped { Some(self.render_sidebar(window, cx)) } else { None };
         let list_col = if self.destination.is_conversation_list() { Some(self.render_list_column(window, cx)) } else { None };
+        // The sidebar is the only way between sections outside the conversation list, so it can be hidden only there.
+        let sidebar = if (self.show_sidebar || list_col.is_none()) && !cramped { Some(self.render_sidebar(window, cx)) } else { None };
         let detail = match (&self.contacts, &self.cloud) {
             (Some(c), _) => c.clone().into_any_element(),
             (_, Some(c)) => c.clone().into_any_element(),

@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use futures::future::{BoxFuture, Shared};
 use futures::FutureExt;
+use olaz_core::fingerprint::Flavour;
+use olaz_host::fingerprint::{Error as FpError, Request as FpRequest, StreamStart};
 
 pub const MAX_CONCURRENT: usize = 6;
 pub const FAILURE_BACKOFF: Duration = Duration::from_secs(20);
@@ -31,6 +33,79 @@ pub enum LoadError {
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+/// The headers Chromium 108 sends with the equivalent load (`<img>` → `Image`, renderer `fetch()` → `Cors`), plus the
+/// User-Agent of the runtime in use; names in `except` are left to the caller.
+fn with_client_headers(mut req: reqwest::RequestBuilder, flavour: Flavour, except: &[(String, String)]) -> reqwest::RequestBuilder {
+    let set = |n: &str| except.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
+    if !set("User-Agent") {
+        req = req.header(reqwest::header::USER_AGENT, olaz_core::fingerprint::user_agent());
+    }
+    for (name, value) in olaz_core::fingerprint::client_headers(flavour) {
+        if !set(name) {
+            req = req.header(name, value);
+        }
+    }
+    req
+}
+
+/// `with_client_headers` as a list, for the fingerprint helper (which sends exactly these, in this order).
+fn client_header_list(flavour: Flavour, own: &[(String, String)]) -> Vec<(String, String)> {
+    let set = |n: &str| own.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
+    let mut out: Vec<(String, String)> = own.to_vec();
+    if !set("User-Agent") {
+        out.push(("User-Agent".into(), olaz_core::fingerprint::user_agent()));
+    }
+    for (name, value) in olaz_core::fingerprint::client_headers(flavour) {
+        if !set(name) {
+            out.push((name.to_string(), value));
+        }
+    }
+    out
+}
+
+fn fp_error(e: FpError) -> LoadError {
+    match e {
+        FpError::TooLarge => LoadError::TooLarge,
+        e if e.is_timeout() => LoadError::Timeout,
+        e => LoadError::Network(e.to_string()),
+    }
+}
+
+/// A GET through the fingerprint helper. `Ok(None)`: the helper cannot serve it — the caller uses reqwest. An
+/// upstream failure is a real result (never retried on the other stack).
+async fn helper_stream(request: FpRequest) -> Result<Option<StreamStart>, LoadError> {
+    let proxy = olaz_host::fingerprint::shared();
+    if !proxy.ready(Duration::from_secs(3)).await {
+        return Ok(None);
+    }
+    match proxy.stream(&request).await {
+        Ok(start) => Ok(Some(start)),
+        Err(e) if e.falls_back() => {
+            olaz_core::log::write(format!("fingerprint: {e} — media request uses the built-in stack"));
+            Ok(None)
+        }
+        Err(e) => Err(fp_error(e)),
+    }
+}
+
+/// A response body from either stack.
+enum Body {
+    Helper(olaz_host::fingerprint::BodyStream),
+    Buffered(Option<Vec<u8>>),
+    Reqwest(futures::stream::BoxStream<'static, reqwest::Result<bytes::Bytes>>),
+}
+
+impl Body {
+    async fn next(&mut self) -> Option<Result<Vec<u8>, LoadError>> {
+        use futures::StreamExt;
+        match self {
+            Body::Helper(s) => s.next().await.map(|r| r.map_err(fp_error)),
+            Body::Buffered(b) => b.take().map(Ok),
+            Body::Reqwest(s) => s.next().await.map(|r| r.map(|b| b.to_vec()).map_err(map_err)),
+        }
     }
 }
 
@@ -225,7 +300,21 @@ impl MediaLoader {
     }
 
     async fn fetch(&self, url: &str) -> Result<Arc<Vec<u8>>, LoadError> {
-        let resp = self.client.get(url).timeout(Duration::from_secs(10)).send().await.map_err(map_err)?;
+        // The fingerprint helper first: Chromium 108's TLS + HTTP/2 (an `<img>` load of the official renderer).
+        let proxy = olaz_host::fingerprint::shared();
+        if proxy.ready(Duration::from_secs(3)).await {
+            let mut r = FpRequest::get(url);
+            r.headers = client_header_list(Flavour::Image, &[]);
+            r.timeout_ms = 10_000;
+            match proxy.perform(&r).await {
+                Ok((head, body)) if (200..300).contains(&head.status) => return Ok(Arc::new(body)),
+                Ok((head, _)) => return Err(LoadError::Http(head.status)),
+                Err(e) if e.falls_back() => olaz_core::log::write(format!("fingerprint: {e} — image uses the built-in stack")),
+                Err(e) => return Err(fp_error(e)),
+            }
+        }
+        let req = with_client_headers(self.client.get(url), Flavour::Image, &[]);
+        let resp = req.timeout(Duration::from_secs(10)).send().await.map_err(map_err)?;
         let status = resp.status().as_u16();
         if !(200..300).contains(&status) {
             return Err(LoadError::Http(status));
@@ -259,18 +348,32 @@ impl MediaLoader {
             let handle = olaz_host::net::runtime().spawn(async move {
                 use futures::StreamExt;
                 use std::io::Write;
-                let resp = client.get(&url).send().await.map_err(map_err)?;
-                let status = resp.status().as_u16();
+                let mut r = FpRequest::get(&url);
+                r.headers = client_header_list(Flavour::Cors, &[]);
+                r.max_bytes = MAX_FILE_BYTES;
+                r.idle_ms = 60_000;
+                let (status, total, mut stream) = match helper_stream(r).await? {
+                    Some(StreamStart::Body(head, body)) => (head.status, head.header("content-length").and_then(|l| l.parse::<u64>().ok()), Body::Helper(body)),
+                    Some(StreamStart::Complete(head, body)) => (head.status, Some(body.len() as u64), Body::Buffered(Some(body))),
+                    None => {
+                        let resp = with_client_headers(client.get(&url), Flavour::Cors, &[]).send().await.map_err(map_err)?;
+                        (resp.status().as_u16(), resp.content_length(), Body::Reqwest(resp.bytes_stream().boxed()))
+                    }
+                };
                 if !(200..300).contains(&status) {
                     return Err(LoadError::Http(status));
                 }
-                let total = resp.content_length();
                 let part = target.with_file_name(format!(".{}.part", uuid::Uuid::new_v4()));
                 let mut f = std::fs::File::create(&part).map_err(|e| LoadError::Network(e.to_string()))?;
                 let mut received = 0u64;
-                let mut stream = resp.bytes_stream();
                 while let Some(chunk) = stream.next().await {
-                    let chunk = chunk.map_err(map_err)?;
+                    let chunk = match chunk {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = std::fs::remove_file(&part);
+                            return Err(e);
+                        }
+                    };
                     received += chunk.len() as u64;
                     if received > MAX_FILE_BYTES {
                         let _ = std::fs::remove_file(&part);
@@ -280,6 +383,11 @@ impl MediaLoader {
                     if let Some(t) = total {
                         progress(received as f64 / t.max(1) as f64);
                     }
+                }
+                // The helper ends a stalled transfer like a finished one: a short body is a failure, not a file.
+                if total.is_some_and(|t| received < t) {
+                    let _ = std::fs::remove_file(&part);
+                    return Err(LoadError::Network("transfer ended early".into()));
                 }
                 f.sync_all().map_err(|e| LoadError::Network(e.to_string()))?;
                 std::fs::rename(&part, &target).map_err(|e| LoadError::Network(e.to_string()))?;
@@ -341,41 +449,44 @@ impl MediaLoader {
                 use std::io::Write;
                 let original_host = u.host_str().unwrap_or("").to_string();
                 let clean = sanitize_headers(&u, &headers);
-                let client = reqwest::Client::builder()
-                    .user_agent(ua)
-                    .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                        if attempt.previous().len() >= 5 || attempt.url().scheme() != "https" { attempt.stop() } else { attempt.follow() }
-                    }))
-                    .build()
-                    .map_err(|e| LoadError::Network(e.to_string()))?;
-                let mut req = client.get(u.clone());
-                for (n, v) in &clean {
-                    req = req.header(n.as_str(), v.as_str());
-                }
-                let send = req.send();
-                let resp = match ttfb {
-                    Some(t) => tokio::time::timeout(t, send).await.map_err(|_| LoadError::Timeout)?,
-                    None => send.await,
-                }
-                .map_err(map_err)?;
-                if resp.url().host_str() != Some(original_host.as_str()) {
-                    // reqwest already dropped Authorization/Cookie on cross-host redirects; other sensitive
-                    // headers (cloud-viewer-key) must not follow either: refuse such a redirect.
-                    if clean.iter().any(|(n, _)| SENSITIVE_HEADERS.contains(&n.to_lowercase().as_str())) {
-                        return Err(LoadError::Http(403));
+                let sensitive = clean.iter().any(|(n, _)| SENSITIVE_HEADERS.contains(&n.to_lowercase().as_str()));
+                let (status, total, mut stream) = match helper_download(&u, &clean, sensitive, ttfb).await? {
+                    Some(found) => found,
+                    None => {
+                        let client = reqwest::Client::builder()
+                            .user_agent(ua)
+                            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                                if attempt.previous().len() >= 5 || attempt.url().scheme() != "https" { attempt.stop() } else { attempt.follow() }
+                            }))
+                            .build()
+                            .map_err(|e| LoadError::Network(e.to_string()))?;
+                        let mut req = with_client_headers(client.get(u.clone()), Flavour::Cors, &clean);
+                        for (n, v) in &clean {
+                            req = req.header(n.as_str(), v.as_str());
+                        }
+                        let send = req.send();
+                        let resp = match ttfb {
+                            Some(t) => tokio::time::timeout(t, send).await.map_err(|_| LoadError::Timeout)?,
+                            None => send.await,
+                        }
+                        .map_err(map_err)?;
+                        // reqwest already dropped Authorization/Cookie on cross-host redirects; other sensitive headers
+                        // (cloud-viewer-key) must not follow either: refuse such a redirect.
+                        if resp.url().host_str() != Some(original_host.as_str()) && sensitive {
+                            return Err(LoadError::Http(403));
+                        }
+                        (resp.status().as_u16(), resp.content_length(), Body::Reqwest(resp.bytes_stream().boxed()))
                     }
-                }
-                let status = resp.status().as_u16();
+                };
                 if !(200..300).contains(&status) {
                     return Err(LoadError::Http(status));
                 }
-                if resp.content_length().is_some_and(|l| l > max_bytes) {
+                if total.is_some_and(|l| l > max_bytes) {
                     return Err(LoadError::TooLarge);
                 }
                 std::fs::create_dir_all(&temp_dir).map_err(|e| LoadError::Network(e.to_string()))?;
                 let path = temp_dir.join(format!("{}.part", uuid::Uuid::new_v4()));
                 let mut f = std::fs::File::create(&path).map_err(|e| LoadError::Network(e.to_string()))?;
-                let mut stream = resp.bytes_stream();
                 let mut received = 0u64;
                 loop {
                     let next = tokio::time::timeout(Duration::from_secs(30), stream.next()).await;
@@ -385,7 +496,11 @@ impl MediaLoader {
                             return Err(LoadError::Timeout);
                         }
                         Ok(None) => break,
-                        Ok(Some(c)) => c.map_err(map_err)?,
+                        Ok(Some(Ok(c))) => c,
+                        Ok(Some(Err(e))) => {
+                            let _ = std::fs::remove_file(&path);
+                            return Err(e);
+                        }
                     };
                     received += chunk.len() as u64;
                     if received > max_bytes {
@@ -394,12 +509,65 @@ impl MediaLoader {
                     }
                     f.write_all(&chunk).map_err(|e| LoadError::Network(e.to_string()))?;
                 }
+                if total.is_some_and(|t| received < t) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(LoadError::Network("transfer ended early".into()));
+                }
                 Ok(path)
             });
             handle.await.map_err(|e| LoadError::Network(e.to_string()))?
         }
         .boxed()
     }
+}
+
+/// `download_with_headers` through the fingerprint helper: redirects are followed here (https only, at most 5 hops, a
+/// host change refused while sensitive headers ride along — the reqwest policy), so per-hop headers stay ours.
+/// `Ok(None)`: the helper cannot serve it.
+async fn helper_download(
+    url: &url::Url,
+    clean: &[(String, String)],
+    sensitive: bool,
+    ttfb: Option<Duration>,
+) -> Result<Option<(u16, Option<u64>, Body)>, LoadError> {
+    let original_host = url.host_str().unwrap_or("").to_string();
+    let mut current = url.clone();
+    for _ in 0..=5 {
+        let mut r = FpRequest::get(current.as_str());
+        r.headers = client_header_list(Flavour::Cors, clean);
+        r.follow = false;
+        // Our own 30 s idle check runs on the chunks; the helper's watchdog stays out of its way.
+        r.idle_ms = 45_000;
+        let start = match ttfb {
+            Some(t) => {
+                r.first_byte_ms = t.as_millis() as u64;
+                tokio::time::timeout(t, helper_stream(r)).await.map_err(|_| LoadError::Timeout)??
+            }
+            None => helper_stream(r).await?,
+        };
+        let Some(start) = start else { return Ok(None) };
+        let (head, body) = match start {
+            StreamStart::Body(head, body) => (head, Body::Helper(body)),
+            StreamStart::Complete(head, body) => (head, Body::Buffered(Some(body))),
+        };
+        let total = head.header("content-length").and_then(|l| l.parse::<u64>().ok());
+        if (300..400).contains(&head.status) {
+            let next = head.header("location").and_then(|l| current.join(l).ok());
+            match next {
+                Some(next) if next.scheme() == "https" => {
+                    if next.host_str() != Some(original_host.as_str()) && sensitive {
+                        return Err(LoadError::Http(403));
+                    }
+                    current = next;
+                    continue;
+                }
+                // Not followed (like the reqwest policy's `stop`): the 3xx is the answer.
+                _ => return Ok(Some((head.status, total, body))),
+            }
+        }
+        return Ok(Some((head.status, total, body)));
+    }
+    Err(LoadError::Network("too many redirects".into()))
 }
 
 /// Runs blocking work on a thread and awaits it from any executor.

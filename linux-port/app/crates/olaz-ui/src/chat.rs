@@ -5,7 +5,7 @@ use std::time::Duration;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, FontStyle, FontWeight, Hsla, InteractiveElement, IntoElement, ListAlignment,
     ListState, ObjectFit, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window, div, list,
-    prelude::FluentBuilder, px,
+    prelude::FluentBuilder, px, relative,
 };
 use gpui_component::input::{InputEvent, Textarea, TextareaState};
 use gpui_component::button::ButtonVariants;
@@ -717,7 +717,11 @@ impl ChatView {
                     .items_center()
                     .justify_center()
                     .hover(|s| s.bg(theme.hover()))
-                    .child(icon("info.circle", 15.0, if crate::inspector::SHOWN.with(|s| s.get()) { theme.accent } else { theme.secondary() }))
+                    .cursor_pointer()
+                    .child(icon("sidebar.right", 16.0, if crate::inspector::SHOWN.with(|s| s.get()) { theme.accent } else { theme.secondary() }))
+                    .tooltip(|window, cx| {
+                        gpui_component::tooltip::Tooltip::new("Ẩn / hiện thông tin hội thoại").action(&crate::keymap::ToggleInspector, None).build(window, cx)
+                    })
                     .on_click(|_, window, _| {
                         crate::inspector::toggle_shown();
                         window.refresh();
@@ -849,19 +853,22 @@ impl ChatView {
                     cx.notify();
                 }));
             for r in &m.reactions {
+                // Opaque under the tint: GPUI has no backdrop blur, and a see-through chip would show the bubble's text.
                 chips = chips.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(3.0))
-                        .px(px(7.0))
-                        .py(px(3.0))
-                        .rounded_full()
-                        .bg(if r.includes_me { with_alpha(theme.accent, 0.4) } else { theme.glass() })
-                        .border_1()
-                        .border_color(theme.glass_border())
-                        .child(div().text_size(px(14.0)).child(r.icon.emoji.clone()))
-                        .when(r.count > 1, |el| el.child(div().text_size(px(10.5)).font_weight(FontWeight::SEMIBOLD).text_color(theme.secondary()).child(r.count.to_string()))),
+                    div().rounded_full().bg(theme.content_bg()).shadow_sm().child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(3.0))
+                            .px(px(7.0))
+                            .py(px(3.0))
+                            .rounded_full()
+                            .when(r.includes_me, |el| el.bg(with_alpha(theme.accent, 0.22)))
+                            .border_1()
+                            .border_color(theme.separator())
+                            .child(crate::reactions::reaction_icon(&r.icon, 14.0, cx))
+                            .when(r.count > 1, |el| el.child(div().text_size(px(10.5)).font_weight(FontWeight::SEMIBOLD).text_color(theme.secondary()).child(r.count.to_string()))),
+                    ),
                 );
             }
             chips
@@ -925,6 +932,8 @@ impl ChatView {
             let mut p = div().flex().gap(px(2.0)).p(px(6.0)).rounded_full().bg(theme.content_bg()).border_1().border_color(theme.separator()).shadow_md();
             for e in REACTION_EMOJIS {
                 let (conv, id) = (conv.clone(), m.id.clone());
+                // The reactions already given by me are tinted, as in the macOS picker.
+                let selected = m.reactions.iter().any(|r| r.includes_me && r.icon.emoji == e);
                 p = p.child(
                     div()
                         .id(SharedString::from(format!("pick-{id}-{e}")))
@@ -934,9 +943,9 @@ impl ChatView {
                         .items_center()
                         .justify_center()
                         .text_size(px(23.0))
-                        
+                        .when(selected, |el| el.bg(with_alpha(theme.accent, 0.22)))
                         .hover(|s| s.bg(with_alpha(theme.accent, 0.22)))
-                        .child(e)
+                        .child(crate::richtext::emoji_text(e, theme.label()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             engine(cx).react(e, &id, &conv);
                             this.picker_for = None;
@@ -989,20 +998,33 @@ impl ChatView {
                     .max_w_full()
                     .child(content)
                     .when_some(reactions, |el, r| {
-                        // Like the macOS design: chips sit on the bubble's bottom edge, at its trailing end.
-                        el.child(div().absolute().bottom(px(-19.0)).right(px(8.0)).child(r))
+                        // Like the macOS design (Tapback): chips over the bubble's outer top corner, 10 px past its
+                        // edge and 12 px above it.
+                        el.child(div().absolute().top(px(-12.0)).when(mine, |el| el.left(px(-10.0))).when(!mine, |el| el.right(px(-10.0))).child(r))
+                    })
+                    // Like the macOS design: the time + react / reply bar hangs beside the bubble's bottom corner, on the
+                    // side facing the middle of the chat, so it never covers the bubble nor moves the rows. The fixed
+                    // width keeps it from being squeezed (an absolute box past the edge has no room of its own).
+                    .when_some(hover_bar, |el, bar| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .bottom_0()
+                                .w(px(HOVER_BAR_SLOT))
+                                .flex()
+                                .when(mine, |el| el.right(relative(1.0)).pr(px(8.0)).justify_end())
+                                .when(!mine, |el| el.left(relative(1.0)).pl(px(8.0)))
+                                .child(bar),
+                        )
                     }),
             )
             .children(status_line)
-            .when_some(hover_bar, |el, bar| el.child(div().absolute().bottom(px(-26.0)).when(mine, |el| el.right_0()).when(!mine, |el| el.left_0()).child(bar)))
             .when_some(picker, |el, p| el.child(div().absolute().top(px(-50.0)).when(mine, |el| el.right_0()).when(!mine, |el| el.left_0()).child(p)));
         div()
             .id(SharedString::from(format!("msg-{id}")))
             .w_full()
             .px(px(16.0))
-            .pt(px(if first { 8.0 } else { 2.0 }))
-            .pb(px(if m.reactions.is_empty() { 0.0 } else { 18.0 }))
-            .when(hovered, |el| el.pb(px(26.0)))
+            .pt(px(if first { 8.0 } else { 2.0 } + if m.reactions.is_empty() { 0.0 } else { 10.0 }))
             .flex()
             .items_end()
             .gap(px(10.0))
@@ -1068,7 +1090,7 @@ impl ChatView {
 
     fn text_body(&self, m: &ChatMessage, cx: &App) -> AnyElement {
         let theme = Theme::get(cx);
-        crate::richtext::message_text(&m.text, &m.mentions, m.is_mine, 14.0 * theme.text_scale, theme)
+        crate::richtext::message_text(SharedString::from(format!("txt-{}", m.id)), &m.conversation_id, &m.text, &m.mentions, m.is_mine, 14.0 * theme.text_scale, theme)
     }
 
     fn render_content(&mut self, m: &ChatMessage, last: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -1975,6 +1997,9 @@ impl Render for ChatView {
     }
 }
 
+/// Width of the slot the hover bar sits in beside the bubble (the bar itself is narrower).
+const HOVER_BAR_SLOT: f32 = 180.0;
+
 pub const REACTION_EMOJIS: [&str; 6] = ["❤️", "👍", "😆", "😮", "😢", "😡"];
 
 /// What "Lưu về máy…" saves for a message: its media URL and a suggested file name.
@@ -2111,7 +2136,7 @@ fn message_menu(menu: PopupMenu, m: &ChatMessage, view: gpui::WeakEntity<ChatVie
                     for e in REACTION_EMOJIS {
                         let (conv, id) = (conv.clone(), id.clone());
                         sub = sub.item(
-                            PopupMenuItem::element(move |_, _| div().text_size(px(16.0)).child(e))
+                            PopupMenuItem::element(move |_, cx| div().text_size(px(16.0)).child(crate::richtext::emoji_text(e, Theme::get(cx).label())))
                                 .on_click(move |_, _, cx| engine(cx).react(e, &id, &conv)),
                         );
                     }

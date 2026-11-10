@@ -73,7 +73,7 @@ pub fn serve(asar: &AsarArchive, path: &str, debug: bool, log: &mut dyn FnMut(St
         // Debug builds only: surface the sub-worker's swallowed import error.
         let needle = b"return this.logger.zsymb(18,\"CytfSU\",";
         if let Some(at) = find(&body, needle, 0) {
-            let insert = b"self.__olazFwd&&self.__olazFwd('insertToDb-failed',e&&((e.name||'')+': '+(e.message||e)+' | '+String(e.stack||'').split('\\n').slice(0,6).join(' < ')));";
+            let insert = b"self.__zhostFwd&&self.__zhostFwd('insertToDb-failed',e&&((e.name||'')+': '+(e.message||e)+' | '+String(e.stack||'').split('\\n').slice(0,6).join(' < ')));";
             body.splice(at..at, insert.iter().copied());
         }
     }
@@ -404,9 +404,9 @@ mod tests {
         let text = String::from_utf8(r.body).unwrap();
         assert!(text.starts_with("(() => {"), "{}", &text[..40]);
         assert!(text.ends_with("})();\n\nWORKER"));
-        assert!(!text.contains("DEBUG_EVAL") && !text.contains("__olazEval"));
+        assert!(!text.contains("DEBUG_EVAL") && !text.contains("__zhostEval"));
         let Served::Response(r) = serve(&asar, "/dal-worker.abc.js", true, &mut log) else { panic!() };
-        assert!(String::from_utf8(r.body).unwrap().contains("__olazEval"));
+        assert!(String::from_utf8(r.body).unwrap().contains("__zhostEval"));
         let Served::Response(r) = serve(&asar, "/sync-v2-sub-worker.1.js", false, &mut log) else { panic!() };
         assert_eq!(r.body, b";self.__swReq=n;n.e=function(e){var t=[],n=a[e]");
         let Served::Response(r) = serve(&asar, "/lazy/main-startup.2.js", false, &mut log) else { panic!() };

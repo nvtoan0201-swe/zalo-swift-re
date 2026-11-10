@@ -2,8 +2,8 @@
   // Debug builds: a probe worker created from the dev eval channel can run code in this scope.
   self.addEventListener('message', async (e) => {
     const d = e.data;
-    if (!d || typeof d !== 'object' || typeof d.__olazEval !== 'string') return;
+    if (!d || typeof d !== 'object' || typeof d.__zhostEval !== 'string') return;
     e.stopImmediatePropagation();
-    try { const r = await (0, eval)(d.__olazEval); self.postMessage({ __olazEvalResult: JSON.stringify(r === undefined ? null : r) }); }
-    catch (err) { self.postMessage({ __olazEvalResult: JSON.stringify({ error: errText(err) }) }); }
+    try { const r = await (0, eval)(d.__zhostEval); self.postMessage({ __zhostEvalResult: JSON.stringify(r === undefined ? null : r) }); }
+    catch (err) { self.postMessage({ __zhostEvalResult: JSON.stringify({ error: errText(err) }) }); }
   });
