@@ -67,6 +67,28 @@ def sticker_sprite():
     img.save(ROOT / "media" / "sticker-sprite.png", optimize=True)
 
 
+def sample_pdf():
+    """A one-page PDF (fixed bytes) for the file message, so downloads and "Lưu về máy…" have something to fetch."""
+    body = b"BT /F1 24 Tf 72 720 Td (Ke hoach chuyen di Da Lat) Tj ET"
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n" % len(body) + body + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + o + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n \n" % off for off in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    (ROOT / "media" / "ke-hoach.pdf").write_bytes(bytes(out))
+
+
 def qr_like():
     """A QR-looking pattern (not a scannable code: fixtures must never log anybody in)."""
     n, cell = 33, 8
@@ -97,6 +119,7 @@ def main():
     landscape()
     sticker()
     sticker_sprite()
+    sample_pdf()
     qr_like()
     print("fixture media written to", ROOT)
 

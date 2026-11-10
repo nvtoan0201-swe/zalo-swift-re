@@ -17,7 +17,7 @@
    {"id": "m05", "senderId": "1000000000000000001", "senderName": "Minh Anh", "isMine": true, "date": {"$ago": 7000}, "status": "seen",
     "kind": {"type": "text"}, "text": "Đẹp quá!", "quote": {"senderName": "Trần Bảo Ngọc", "text": "Ảnh chụp ở Đà Lạt đó."}},
    {"id": "m06", "senderId": "1000000000000000001", "senderName": "Minh Anh", "isMine": true, "date": {"$ago": 6900}, "status": "seen",
-    "kind": {"type": "file", "name": "Ke-hoach-chuyen-di-Da-Lat-thang-11.pdf", "size": 2483712}, "text": ""},
+    "kind": {"type": "file", "name": "Ke-hoach-chuyen-di-Da-Lat-thang-11.pdf", "size": 2483712, "url": "fixture:media/ke-hoach.pdf"}, "text": ""},
    {"id": "m07", "senderId": "2000000000000000002", "senderName": "Trần Bảo Ngọc", "isMine": false, "date": {"$ago": 3700},
     "kind": {"type": "link", "title": "Top 10 quán cà phê đẹp ở Đà Lạt", "url": "https://example.com/da-lat-cafe", "description": "Danh sách quán cà phê view đồi thông.", "source": "example.com"}, "text": "https://example.com/da-lat-cafe"},
    {"id": "m08", "senderId": "2000000000000000002", "senderName": "Trần Bảo Ngọc", "isMine": false, "date": {"$ago": 3650},

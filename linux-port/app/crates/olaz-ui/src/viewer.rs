@@ -60,13 +60,15 @@ fn fetch_then_open(url: &str, name: Option<String>, cx: &mut App) {
     }
     let loader = cx.global::<Images>().loader.clone();
     let fut = loader.local_file(url, |_| {});
+    // Named copies live in Olaz's cache, never next to the source (a `file://` source may be anywhere).
+    let named_dir = crate::app::engine(cx).paths.cache().join("named");
     cx.spawn(async move |_| {
         if let Ok(path) = fut.await {
             let target = match name {
                 // Keep the official file name for the desktop handler (copy next to the cached file).
                 Some(n) if !n.is_empty() => {
                     let safe: String = n.chars().map(|c| if c == '/' || c == '\0' { '_' } else { c }).collect();
-                    let dir = path.parent().unwrap().join("named");
+                    let dir = named_dir.clone();
                     let _ = std::fs::create_dir_all(&dir);
                     let named = dir.join(safe);
                     if std::fs::hard_link(&path, &named).is_err() {
@@ -116,8 +118,11 @@ pub fn save_file_as(url: &str, name: &str, cx: &mut App) {
     let download = cx.global::<Images>().loader.clone().local_file(url, |_| {});
     let suggested = safe_file_name(name);
     let chosen = cx.prompt_for_new_path(&downloads_dir(), Some(&suggested));
+    olaz_core::log::write("save-as: asking for a destination");
     cx.spawn(async move |cx| {
-        let target = match chosen.await {
+        let answer = chosen.await;
+        olaz_core::log::write(format!("save-as: dialog answered {:?}", answer.as_ref().map(|r| r.as_ref().map(|p| p.is_some()).map_err(|e| e.to_string()))));
+        let target = match answer {
             Ok(Ok(Some(path))) => path,
             Ok(Ok(None)) => return, // cancelled
             _ => {

@@ -1199,15 +1199,20 @@ impl ChatView {
                 let link = url.clone();
                 let file_name = name.clone();
                 let (save_link, save_name) = (url.clone(), name.clone());
+                // Two sibling targets (no nested click handlers): the file info opens the file, ↓ saves it.
                 div()
                     .id(SharedString::from(format!("file-{}", m.id)))
                     .p(px(10.0))
                     .rounded(px(16.0))
                     .bg(theme.incoming_bubble())
                     .when(m.status == Status::Sending, |el| el.opacity(0.7))
-                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
                     .child(
                         div()
+                            .id(SharedString::from(format!("file-open-{}", m.id)))
+                            .cursor_pointer()
                             .flex()
                             .items_center()
                             .gap(px(10.0))
@@ -1221,29 +1226,33 @@ impl ChatView {
                                     .child(div().text_size(px(13.0)).font_weight(FontWeight::SEMIBOLD).line_clamp(2).child(name.clone()))
                                     .child(div().text_size(px(11.5)).opacity(0.75).child(format::bytes((*size).max(0) as u64))),
                             )
-                            .child(
-                                // "Lưu về máy…": the system save dialog picks the folder and name.
-                                div()
-                                    .id(SharedString::from(format!("file-save-{}", m.id)))
-                                    .p(px(4.0))
-                                    .rounded_full()
-                                    .hover(|s| s.bg(theme.hover()))
-                                    .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("Lưu về máy…").build(window, cx))
-                                    .child(icon("arrow.down.circle", 16.0, theme.secondary()))
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                    .on_click(move |_, _, cx| {
-                                        cx.stop_propagation();
-                                        if let Some(u) = &save_link {
-                                            crate::viewer::save_file_as(u, &save_name, cx);
-                                        }
-                                    }),
-                            ),
+                            .on_click(move |_, _, cx| {
+                                if let Some(u) = &link {
+                                    crate::viewer::open_file(u, &file_name, cx);
+                                }
+                            }),
                     )
-                    .on_click(move |_, _, cx| {
-                        if let Some(u) = &link {
-                            crate::viewer::open_file(u, &file_name, cx);
-                        }
-                    })
+                    .child(
+                        // "Lưu về máy…": the system save dialog picks the folder and name.
+                        // The whole right end of the card (full height) is the target, not just the 16-pt glyph.
+                        div()
+                            .id(SharedString::from(format!("file-save-{}", m.id)))
+                            .self_stretch()
+                            .w(px(40.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(10.0))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme.hover()))
+                            .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("Lưu về máy…").build(window, cx))
+                            .child(icon("arrow.down.circle", 16.0, theme.secondary()))
+                            .on_click(move |_, _, cx| {
+                                if let Some(u) = &save_link {
+                                    crate::viewer::save_file_as(u, &save_name, cx);
+                                }
+                            }),
+                    )
                     .into_any_element()
             }
             Kind::Link { title, url, thumbnail, description, source } => {
