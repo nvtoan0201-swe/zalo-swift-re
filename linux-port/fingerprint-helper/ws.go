@@ -49,10 +49,22 @@ func dialTLSChrome(ctx context.Context, network, addr string) (net.Conn, error) 
 	if err != nil {
 		return nil, err
 	}
+	// HelloChrome_108's SpecFactory is a stub that always errors; the real spec lives in
+	// utls' parrot table (tls-client's round tripper falls back the same way).
 	spec, err := profiles.Chrome_108.GetClientHelloSpec()
+	if err != nil {
+		spec, err = utls.UTLSIdToSpec(utls.HelloChrome_108)
+	}
 	if err != nil {
 		raw.Close()
 		return nil, err
+	}
+	// Chromium offers only http/1.1 on WebSocket connections; offering h2 would let the server
+	// pick a protocol the upgrade request can't speak.
+	for _, ext := range spec.Extensions {
+		if alpn, ok := ext.(*utls.ALPNExtension); ok {
+			alpn.AlpnProtocols = []string{"http/1.1"}
+		}
 	}
 	uconn := utls.UClient(raw, &utls.Config{ServerName: host}, utls.HelloCustom, false, false, true)
 	if err := uconn.ApplyPreset(&spec); err != nil {
