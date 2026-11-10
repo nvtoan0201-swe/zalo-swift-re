@@ -446,7 +446,7 @@ impl ShellView {
         };
         let row = |id: &'static str, d: Destination, symbol: &'static str, title: &'static str, count: usize, cx: &mut Context<Self>| {
             let selected = highlighted == d;
-            let fg = if selected { theme.white() } else { theme.label() };
+            let fg = theme.label();
             div()
                 .id(id)
                 .h(px(28.0))
@@ -457,11 +457,11 @@ impl ShellView {
                 .items_center()
                 .gap(px(8.0))
                 .cursor_pointer()
-                .when(selected, |el| el.bg(theme.accent))
+                .when(selected, |el| el.bg(theme.selection_tint()))
                 .when(!selected, |el| el.hover(|s| s.bg(theme.hover())))
-                .child(icon(symbol, 14.0, if selected { theme.white() } else { theme.accent }))
+                .child(icon(symbol, 14.0, theme.accent))
                 .child(crate::widgets::static_text(div().flex_1().text_size(px(13.0)).text_color(fg), title))
-                .when(count > 0, |el| el.child(div().text_size(px(11.5)).text_color(if selected { theme.white() } else { theme.secondary() }).child(count.to_string())))
+                .when(count > 0, |el| el.child(div().text_size(px(11.5)).text_color(theme.secondary()).child(count.to_string())))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.search_text.clear();
                     if d == Destination::Inbox && matches!(this.destination, Destination::Label(_)) {
@@ -720,6 +720,7 @@ impl ShellView {
             .w(px(340.0))
             .flex_none()
             .h_full()
+            .bg(theme.list_bg())
             .flex()
             .flex_col()
             .border_r_1()
@@ -791,10 +792,10 @@ impl ShellView {
         let now = crate::format::now();
         let time = conv.preview.as_ref().and_then(|p| p.date).map(|d| format::list_time(d, now)).unwrap_or_default();
         let (preview, preview_color) = match (&typing, &conv.preview) {
-            (Some(t), _) => (format!("{t} đang soạn tin…"), if selected { theme.white() } else { theme.accent }),
+            (Some(t), _) => (format!("{t} đang soạn tin…"), theme.accent),
             (None, Some(p)) if !p.text.is_empty() => (
                 if p.from_me { format!("Bạn: {}", p.text) } else { p.text.clone() },
-                if selected { with_alpha(theme.white(), 0.8) } else if unread { theme.label() } else { theme.secondary() },
+                if unread { theme.label() } else { theme.secondary() },
             ),
             _ => (
                 if conv.is_group && conv.members > 0 {
@@ -806,10 +807,10 @@ impl ShellView {
                 } else {
                     "Bạn bè".into()
                 },
-                if selected { with_alpha(theme.white(), 0.8) } else { theme.secondary() },
+                theme.secondary(),
             ),
         };
-        let fg = if selected { theme.white() } else { theme.label() };
+        let fg = theme.label();
         let id_owned = id.to_string();
         let av = self.conversation_avatar(&conv, is_self, 44.0, cx);
         div()
@@ -824,7 +825,7 @@ impl ShellView {
                     .px(px(8.0))
                     .py(px(7.0))
                     .rounded(px(10.0))
-                    .when(selected, |el| el.bg(theme.accent))
+                    .when(selected, |el| el.bg(theme.selection_tint()))
                     .when(!selected, |el| el.hover(|s| s.bg(theme.hover())))
                     .child(av)
                     .child(
@@ -865,7 +866,7 @@ impl ShellView {
                                         )
                                     })
                                     .child(div().flex_1().min_w(px(4.0)))
-                                    .child(crate::widgets::static_text(div().flex_none().text_size(px(11.5)).text_color(if selected { with_alpha(theme.white(), 0.8) } else { theme.secondary() }), &time)),
+                                    .child(crate::widgets::static_text(div().flex_none().text_size(px(11.5)).text_color(theme.secondary()), &time)),
                             )
                             .child(
                                 div()
@@ -874,7 +875,7 @@ impl ShellView {
                                     .gap(px(6.0))
                                     .child(crate::widgets::static_text(div().flex_1().min_w(px(0.0)).h(px(32.0)).text_size(px(12.5)).line_height(px(16.0)).line_clamp(2).text_color(preview_color), &preview))
                                     .when(unread, |el| {
-                                        let (bg, text) = if selected { (with_alpha(theme.white(), 0.95), theme.accent) } else { (theme.accent, theme.white()) };
+                                        let (bg, text) = (theme.accent, theme.white());
                                         el.child(div().flex_none().child(badge(conv.unread, bg, text)))
                                     }),
                             ),
@@ -891,7 +892,18 @@ impl ShellView {
     fn conversation_avatar(&self, conv: &ConversationSummary, is_self: bool, size: f32, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::get(cx).clone();
         if is_self {
-            return div().size(px(size)).flex_none().rounded_full().bg(theme.accent).flex().items_center().justify_center().child(icon("cloud.fill", size * 0.43, theme.white())).into_any_element();
+            return div()
+                .size(px(size))
+                .flex_none()
+                .rounded_full()
+                .bg(theme.content_bg())
+                .border_1()
+                .border_color(theme.separator())
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(icon("cloud", size * 0.43, theme.accent))
+                .into_any_element();
         }
         let base = avatar(conv.avatar.as_deref(), &conv.display_name(), size, cx);
         if !conv.is_group {

@@ -66,16 +66,7 @@ fn fetch_then_open(url: &str, name: Option<String>, cx: &mut App) {
         if let Ok(path) = fut.await {
             let target = match name {
                 // Keep the official file name for the desktop handler (copy next to the cached file).
-                Some(n) if !n.is_empty() => {
-                    let safe: String = n.chars().map(|c| if c == '/' || c == '\0' { '_' } else { c }).collect();
-                    let dir = named_dir.clone();
-                    let _ = std::fs::create_dir_all(&dir);
-                    let named = dir.join(safe);
-                    if std::fs::hard_link(&path, &named).is_err() {
-                        let _ = std::fs::copy(&path, &named);
-                    }
-                    named
-                }
+                Some(n) if !n.is_empty() => named_copy(&path, &named_dir, &n).unwrap_or(path),
                 _ => path,
             };
             if may_execute(&target) {
@@ -87,6 +78,32 @@ fn fetch_then_open(url: &str, name: Option<String>, cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// True when both paths are the same file (same device and inode, e.g. a hard link).
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(x), Ok(y)) => x.dev() == y.dev() && x.ino() == y.ino(),
+        _ => false,
+    }
+}
+
+/// A copy of `src` named `name` in `dir` (hard link when possible), for apps that show the file name. An existing copy
+/// is replaced, never written through: copying onto a hard link of `src` would truncate `src` itself.
+pub fn named_copy(src: &std::path::Path, dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    std::fs::create_dir_all(dir).ok()?;
+    let named = dir.join(safe_file_name(name));
+    if same_file(src, &named) {
+        return Some(named);
+    }
+    if named.exists() {
+        std::fs::remove_file(&named).ok()?;
+    }
+    if std::fs::hard_link(src, &named).is_err() {
+        std::fs::copy(src, &named).ok()?;
+    }
+    Some(named)
 }
 
 /// The user's Downloads folder (`xdg-user-dir DOWNLOAD`, else ~/Downloads, else home) — the save dialog's start.
@@ -126,12 +143,22 @@ pub fn save_file_as(url: &str, name: &str, cx: &mut App) {
             Ok(Ok(Some(path))) => path,
             Ok(Ok(None)) => return, // cancelled
             _ => {
-                let _ = cx.update(|cx| crate::app::engine(cx).show_conv_toast(ToastKind::Failure, "Không mở được hộp thoại lưu tệp."));
+                let _ = cx.update(|cx| {
+                    crate::app::engine(cx).show_conv_toast(ToastKind::Failure, "Không mở được hộp thoại lưu tệp.");
+                    cx.refresh_windows();
+                });
                 return;
             }
         };
         let result = match download.await {
-            Ok(cached) => std::fs::copy(&cached, &target).map(|_| ()).map_err(|e| e.to_string()),
+            // Never copy a file onto itself (the chosen path may be the cached file or a link to it): that truncates it.
+            Ok(cached) if same_file(&cached, &target) => Ok(()),
+            Ok(cached) => {
+                if target.exists() {
+                    let _ = std::fs::remove_file(&target);
+                }
+                std::fs::copy(&cached, &target).map(|_| ()).map_err(|e| e.to_string())
+            }
             Err(e) => Err(format!("{e:?}")),
         };
         let _ = cx.update(|cx| {
@@ -146,6 +173,8 @@ pub fn save_file_as(url: &str, name: &str, cx: &mut App) {
                     e.show_conv_toast(ToastKind::Failure, "Không lưu được tệp. Hãy thử lại.");
                 }
             }
+            // Finished in a background task: nothing else asks the window to redraw for the toast.
+            cx.refresh_windows();
         });
     })
     .detach();
@@ -231,6 +260,28 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"%PDF-1.4 test");
         let toast = engine.state.borrow().conversation_ui.toast.clone().map(|t| t.text);
         assert_eq!(toast.as_deref(), Some("Đã lưu Báo cáo.pdf"));
+    }
+
+    #[test]
+    fn named_copy_never_truncates_the_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("cached");
+        std::fs::write(&src, b"PDF bytes").unwrap();
+        let named_dir = dir.path().join("named");
+        // Opening the same file twice (second time the named copy already exists as a hard link of the source).
+        let a = super::named_copy(&src, &named_dir, "Báo cáo.pdf").unwrap();
+        let b = super::named_copy(&src, &named_dir, "Báo cáo.pdf").unwrap();
+        assert_eq!(a, b);
+        assert_eq!(std::fs::read(&src).unwrap(), b"PDF bytes");
+        assert_eq!(std::fs::read(&b).unwrap(), b"PDF bytes");
+        // A stale copy with other content is replaced, the source untouched.
+        std::fs::remove_file(&b).unwrap();
+        std::fs::write(&b, b"old").unwrap();
+        super::named_copy(&src, &named_dir, "Báo cáo.pdf").unwrap();
+        assert_eq!(std::fs::read(&b).unwrap(), b"PDF bytes");
+        assert_eq!(std::fs::read(&src).unwrap(), b"PDF bytes");
+        // Saving onto the cached file itself is a no-op, not a truncation.
+        assert!(super::same_file(&src, &src));
     }
 
     #[test]

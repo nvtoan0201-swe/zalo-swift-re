@@ -12,7 +12,7 @@ use crate::app::engine;
 use crate::chrome::{self, TITLEBAR_HEIGHT};
 use crate::icon::icon;
 use crate::shell::splice_keys;
-use crate::theme::{Theme, with_alpha};
+use crate::theme::Theme;
 use crate::widgets::{ButtonStyle, avatar, button, content_unavailable, spinner};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,7 +192,7 @@ impl ContactsView {
                 .flex()
                 .items_center()
                 .gap(px(10.0))
-                .when(selected, |el| el.bg(theme.accent).text_color(theme.white()))
+                .when(selected, |el| el.bg(theme.selection_tint()))
                 .when(!selected, |el| el.hover(|s| s.bg(theme.hover())))
         };
         match item {
@@ -227,7 +227,7 @@ impl ContactsView {
                             .flex()
                             .flex_col()
                             .child(div().truncate().text_size(px(13.5)).font_weight(FontWeight::MEDIUM).child(g.name.clone()))
-                            .child(div().text_size(px(11.5)).text_color(if selected { with_alpha(theme.white(), 0.8) } else { theme.secondary() }).child(format!("{} thành viên", g.members))),
+                            .child(div().text_size(px(11.5)).text_color(theme.secondary()).child(format!("{} thành viên", g.members))),
                     )
                     .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
                         if ev.click_count() >= 2 {
@@ -264,7 +264,7 @@ impl ContactsView {
                                     .child(div().flex_1().min_w(px(0.0)).truncate().text_size(px(13.5)).font_weight(FontWeight::MEDIUM).child(r.name.clone()))
                                     .when_some(r.date, |el, d| el.child(div().text_size(px(10.5)).text_color(theme.tertiary()).child(ago(d, now)))),
                             )
-                            .when(!r.message.is_empty(), |el| el.child(div().truncate().text_size(px(12.0)).text_color(if selected { with_alpha(theme.white(), 0.8) } else { theme.secondary() }).child(r.message.clone()))),
+                            .when(!r.message.is_empty(), |el| el.child(div().truncate().text_size(px(12.0)).text_color(theme.secondary()).child(r.message.clone()))),
                     )
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(&id1, cx)))
                     .into_any_element()

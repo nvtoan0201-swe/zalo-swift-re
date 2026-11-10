@@ -163,9 +163,9 @@ impl CloudView {
                 .flex()
                 .items_center()
                 .gap(px(10.0))
-                .when(sel, |el| el.bg(theme.accent).text_color(theme.white()))
+                .when(sel, |el| el.bg(theme.selection_tint()))
                 .when(!sel, |el| el.hover(|s| s.bg(theme.hover())))
-                .child(icon(sym, 14.0, if sel { theme.white() } else { theme.accent }))
+                .child(icon(sym, 14.0, theme.accent))
                 .child(div().text_size(px(13.5)).font_weight(FontWeight::MEDIUM).child(title))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let c = engine(cx).state.borrow().cloud.clone();

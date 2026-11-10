@@ -86,10 +86,20 @@ impl Theme {
         self.pick(0xFFFFFFFF, 0x1E1E1EFF)
     }
     pub fn sidebar_bg(&self) -> Hsla {
-        self.pick(0xF4F4F6F0, 0x2A2A2CF0)
+        self.pick(0xEEF2F8F2, 0x2A2A2CF0)
+    }
+    /// The conversation list column: a lighter, slightly blue surface between sidebar and chat.
+    pub fn list_bg(&self) -> Hsla {
+        self.pick(0xF7F9FCFF, 0x242426FF)
+    }
+    /// Selected rows (sidebar, conversation list): a light tint of the accent, text keeps its normal color.
+    pub fn selection_tint(&self) -> Hsla {
+        let mut c = self.accent;
+        c.a = if self.dark { 0.32 } else { 0.16 };
+        c
     }
     pub fn incoming_bubble(&self) -> Hsla {
-        self.pick(0xE9E9EBFF, 0x3B3B3BFF)
+        self.pick(0xF0F1F4FF, 0x3B3B3BFF)
     }
     pub fn red(&self) -> Hsla {
         self.pick(0xFF3B30FF, 0xFF453AFF)
@@ -146,4 +156,27 @@ pub fn system_prefers_dark() -> bool {
         Ok(o) => String::from_utf8_lossy(&o.stdout).contains("uint32 1"),
         Err(_) => false,
     }
+}
+
+/// Gradient pairs (top-left → bottom-right) for avatars without a photo; picked by name so a person keeps a color.
+pub const AVATAR_GRADIENTS: [(u32, u32); 8] = [
+    (0x2F80FF, 0x1EC8E8), // blue → cyan
+    (0xFF9A6B, 0xF2643E), // orange
+    (0x8E7BFF, 0x6A4DE8), // purple
+    (0x2DD4A0, 0x10A97E), // green
+    (0xF48FB8, 0xE0628F), // pink
+    (0x3D9BFF, 0x1F6FE5), // blue
+    (0xFFC04D, 0xF39A1F), // amber
+    (0x5BC7F0, 0x2C9AD6), // sky
+];
+
+/// The gradient for `name` (stable: FNV-1a over the name's bytes).
+pub fn avatar_gradient(name: &str) -> (Hsla, Hsla) {
+    let mut h: u32 = 0x811C9DC5;
+    for b in name.trim().bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x01000193);
+    }
+    let (a, b) = AVATAR_GRADIENTS[(h as usize) % AVATAR_GRADIENTS.len()];
+    (hex(a), hex(b))
 }

@@ -12,7 +12,7 @@ use gpui::{
 use olaz_media::MediaLoader;
 
 use crate::icon;
-use crate::theme::{FONT, ROUNDED, Theme, with_alpha};
+use crate::theme::{FONT, ROUNDED, Theme};
 
 // MARK: remote images
 
@@ -134,20 +134,24 @@ pub fn avatar(url: Option<&str>, name: &str, size: f32, cx: &mut App) -> AnyElem
     let base = div().size(px(size)).flex_none().rounded_full().overflow_hidden();
     match state {
         Some(ImageState::Ready(image)) => base.child(img(image).size(px(size)).rounded_full().object_fit(ObjectFit::Cover)).into_any_element(),
-        _ => base
-            .bg(with_alpha(theme.accent, 0.18))
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .font_family(ROUNDED)
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(size * 0.36))
-                    .text_color(theme.accent)
-                    .child(name_initials(name)),
-            )
-            .into_any_element(),
+        _ => {
+            // No photo: a colored gradient circle with white initials (color chosen from the name).
+            let _ = &theme;
+            let (from, to) = crate::theme::avatar_gradient(name);
+            base.bg(gpui::linear_gradient(135.0, gpui::linear_color_stop(from, 0.0), gpui::linear_color_stop(to, 1.0)))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .font_family(ROUNDED)
+                        .font_weight(FontWeight::BOLD)
+                        .text_size(px(size * 0.36))
+                        .text_color(gpui::white())
+                        .child(name_initials(name)),
+                )
+                .into_any_element()
+        }
     }
 }
 
